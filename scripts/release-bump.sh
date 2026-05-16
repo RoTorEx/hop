@@ -4,9 +4,9 @@ set -eu
 bump="${1:-patch}"
 
 case "$bump" in
-    patch|minor|major) ;;
+    current|patch|minor|major) ;;
     *)
-        echo "ERROR: bump must be patch, minor, or major." >&2
+        echo "ERROR: bump must be current, patch, minor, or major." >&2
         exit 1
         ;;
 esac
@@ -34,6 +34,8 @@ case "$major.$minor.$patch" in
 esac
 
 case "$bump" in
+    current)
+        ;;
     patch)
         patch=$((patch + 1))
         ;;
@@ -54,15 +56,22 @@ tmp="${TMPDIR:-/tmp}/jumper-release-bump-$$"
 mkdir -p "$tmp"
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
-awk -v current="$current" -v next="$next" '
-    BEGIN { changed = 0 }
-    /^version = / && changed == 0 {
-        sub("version = \"" current "\"", "version = \"" next "\"")
-        changed = 1
-    }
-    { print }
-' Cargo.toml > "$tmp/Cargo.toml"
-cat "$tmp/Cargo.toml" > Cargo.toml
+if grep -q "^## \[$next\]" CHANGELOG.md; then
+    echo "ERROR: CHANGELOG.md already has a $next release section." >&2
+    exit 1
+fi
+
+if [ "$bump" != "current" ]; then
+    awk -v current="$current" -v target="$next" '
+        BEGIN { changed = 0 }
+        /^version = / && changed == 0 {
+            sub("version = \"" current "\"", "version = \"" target "\"")
+            changed = 1
+        }
+        { print }
+    ' Cargo.toml > "$tmp/Cargo.toml"
+    cat "$tmp/Cargo.toml" > Cargo.toml
+fi
 
 awk -v version="$next" -v today="$today" '
     /^## \[Unreleased\]$/ {
@@ -77,5 +86,9 @@ cat "$tmp/CHANGELOG.md" > CHANGELOG.md
 
 cargo generate-lockfile
 
-echo "Bumped jumper from $current to $next"
+if [ "$bump" = "current" ]; then
+    echo "Prepared jumper $next release metadata"
+else
+    echo "Bumped jumper from $current to $next"
+fi
 echo "Review, commit, tag with make release-tag, then publish with make release-publish."

@@ -66,7 +66,23 @@ Normal verification:
 make check
 ```
 
-Prepare a patch release:
+One-command guarded release:
+
+```bash
+make release
+```
+
+That command runs checks, bumps version metadata, creates a dedicated release
+commit, creates a `vX.Y.Z` tag, and pushes `main` with tags. It asks for an
+explicit confirmation prompt before changing release state.
+
+For the first release, when `Cargo.toml` already contains the version to tag:
+
+```bash
+make release BUMP=current
+```
+
+Prepare the same flow manually:
 
 ```bash
 make release-bump
@@ -76,9 +92,9 @@ make release-tag
 make release-publish
 ```
 
-Use `make release-bump BUMP=minor` or `make release-bump BUMP=major` for larger
-version changes. Pushing a `vX.Y.Z` tag triggers the GitHub Actions workflow that
-builds and attaches a Linux release binary.
+Use `BUMP=minor` or `BUMP=major` for larger version changes. Pushing a `vX.Y.Z`
+tag triggers the GitHub Actions workflow that builds and attaches a Linux
+release binary.
 
 ## Kernel sync (sanity check)
 

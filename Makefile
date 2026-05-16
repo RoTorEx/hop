@@ -1,4 +1,4 @@
-.PHONY: install deps-update build typecheck lint fmt test check run release-bump release-tag release-publish vibe-kernel-set vibe-kernel-path vibe-pull
+.PHONY: install deps-update build typecheck lint fmt test check run release release-bump release-tag release-publish vibe-kernel-set vibe-kernel-path vibe-pull
 
 install:
 	cargo fetch --locked
@@ -30,6 +30,9 @@ check:
 
 run:
 	cargo run --locked --
+
+release:
+	scripts/release.sh $(or $(BUMP),patch)
 
 release-bump:
 	scripts/release-bump.sh $(or $(BUMP),patch)
