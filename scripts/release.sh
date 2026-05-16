@@ -1,30 +1,22 @@
 #!/usr/bin/env sh
 set -eu
 
-bump="${1:-patch}"
-
 usage() {
     cat <<'USAGE'
-Run the guarded jumper release flow.
+Run the jumper release flow.
 
 Usage:
-  make release [BUMP=current|patch|minor|major]
-
-Environment:
-  APPROVE_RELEASE=1    Skip the interactive confirmation prompt.
+  make release
 
 Flow:
   1. Require main and a clean working tree.
   2. Fetch origin/main and tags.
   3. Run make check.
-  4. Run make release-bump.
+  4. Finalize the current version if it has no tag yet; otherwise bump patch.
   5. Run make check again.
-  6. Commit version/changelog metadata.
+  6. Commit release metadata.
   7. Create vX.Y.Z tag.
   8. Push main and tags with --follow-tags.
-
-Use BUMP=current for the first release when Cargo.toml already contains the
-version to tag. Future releases default to BUMP=patch.
 USAGE
 }
 
@@ -37,99 +29,75 @@ read_version() {
     awk -F'"' '/^version = / { print $2; exit }' Cargo.toml
 }
 
-next_version() {
-    current="$1"
-    release_bump="$2"
+finalize_current_version() {
+    version="$1"
+    today="$(date +%Y-%m-%d)"
+    tmp="${TMPDIR:-/tmp}/jumper-release-$$"
+    mkdir -p "$tmp"
 
-    old_ifs="$IFS"
-    IFS=.
-    set -- $current
-    IFS="$old_ifs"
-
-    major="${1:-}"
-    minor="${2:-}"
-    patch="${3:-}"
-
-    case "$major" in ''|*[!0-9]*) fail "unsupported version: $current" ;; esac
-    case "$minor" in ''|*[!0-9]*) fail "unsupported version: $current" ;; esac
-    case "$patch" in ''|*[!0-9]*) fail "unsupported version: $current" ;; esac
-
-    case "$release_bump" in
-        current)
-            ;;
-        patch)
-            patch=$((patch + 1))
-            ;;
-        minor)
-            minor=$((minor + 1))
-            patch=0
-            ;;
-        major)
-            major=$((major + 1))
-            minor=0
-            patch=0
-            ;;
-        *)
-            fail "bump must be current, patch, minor, or major"
-            ;;
-    esac
-
-    printf "%s.%s.%s\n" "$major" "$minor" "$patch"
-}
-
-confirm_release() {
-    target="$1"
-
-    if [ "${APPROVE_RELEASE:-}" = "1" ]; then
-        return 0
+    if grep -q "^## \[$version\]" CHANGELOG.md; then
+        fail "CHANGELOG.md already has a $version release section"
     fi
 
-    echo "Release approval required."
-    echo "This will create a release commit, create tag v$target, and push main with tags."
-    printf "Type 'release v%s' to continue: " "$target"
-    read -r answer
-    [ "$answer" = "release v$target" ] || fail "release cancelled"
+    awk -v version="$version" -v today="$today" '
+        /^## \[Unreleased\]$/ {
+            print
+            print ""
+            print "## [" version "] - " today
+            next
+        }
+        { print }
+    ' CHANGELOG.md > "$tmp/CHANGELOG.md"
+    cat "$tmp/CHANGELOG.md" > CHANGELOG.md
+
+    cargo generate-lockfile
 }
 
-case "$bump" in
+case "${1:-}" in
+    "")
+        ;;
     -h|--help)
         usage
         exit 0
         ;;
-    current|patch|minor|major)
-        ;;
     *)
-        fail "bump must be current, patch, minor, or major"
+        fail "make release does not accept release flags"
         ;;
 esac
+
+trap 'rm -rf "${TMPDIR:-/tmp}/jumper-release-$$"' EXIT HUP INT TERM
 
 branch="$(git rev-parse --abbrev-ref HEAD)"
 [ "$branch" = "main" ] || fail "release must run from main, not $branch"
 
 [ -z "$(git status --porcelain)" ] || fail "commit or stash changes before releasing"
 
-current="$(read_version)"
-[ -n "$current" ] || fail "could not read version from Cargo.toml"
-target="$(next_version "$current" "$bump")"
-tag="v$target"
-
-confirm_release "$target"
-
 git fetch origin main --tags
-
-if git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
-    fail "tag $tag already exists"
-fi
 
 if ! git merge-base --is-ancestor origin/main HEAD; then
     fail "local main is behind or diverged from origin/main"
 fi
 
 make check
-make release-bump BUMP="$bump"
 
-target_after_bump="$(read_version)"
-[ "$target_after_bump" = "$target" ] || fail "expected Cargo.toml version $target, got $target_after_bump"
+current="$(read_version)"
+[ -n "$current" ] || fail "could not read version from Cargo.toml"
+current_tag="v$current"
+
+if git rev-parse --verify "refs/tags/$current_tag" >/dev/null 2>&1; then
+    make release-bump
+    target="$(read_version)"
+    commit_message="build: bump version to v$target"
+else
+    finalize_current_version "$current"
+    target="$current"
+    commit_message="build: release v$target"
+fi
+
+tag="v$target"
+if git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
+    fail "tag $tag already exists"
+fi
 
 make check
 
@@ -139,12 +107,7 @@ if git diff --cached --quiet; then
     fail "release produced no commit-worthy metadata changes"
 fi
 
-if [ "$bump" = "current" ]; then
-    git commit -m "build: release v$target"
-else
-    git commit -m "build: bump version to v$target"
-fi
-
+git commit -m "$commit_message"
 make release-tag
 make release-publish
 

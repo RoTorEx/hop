@@ -32,10 +32,10 @@ run:
 	cargo run --locked --
 
 release:
-	scripts/release.sh $(or $(BUMP),patch)
+	scripts/release.sh
 
 release-bump:
-	scripts/release-bump.sh $(or $(BUMP),patch)
+	scripts/release-bump.sh
 
 release-tag:
 	@if [ -n "$$(git status --porcelain)" ]; then echo "ERROR: commit or stash changes before tagging."; exit 1; fi

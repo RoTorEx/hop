@@ -1,21 +1,13 @@
 #!/usr/bin/env sh
 set -eu
 
-bump="${1:-patch}"
-
-case "$bump" in
-    current|patch|minor|major) ;;
-    *)
-        echo "ERROR: bump must be current, patch, minor, or major." >&2
-        exit 1
-        ;;
-esac
+fail() {
+    echo "ERROR: $*" >&2
+    exit 1
+}
 
 current="$(awk -F'"' '/^version = / { print $2; exit }' Cargo.toml)"
-if [ -z "$current" ]; then
-    echo "ERROR: could not read version from Cargo.toml." >&2
-    exit 1
-fi
+[ -n "$current" ] || fail "could not read version from Cargo.toml"
 
 old_ifs="$IFS"
 IFS=.
@@ -26,30 +18,11 @@ major="${1:-}"
 minor="${2:-}"
 patch="${3:-}"
 
-case "$major.$minor.$patch" in
-    *[!0-9.]*|.*|*..*|*.)
-        echo "ERROR: unsupported version: $current" >&2
-        exit 1
-        ;;
-esac
+case "$major" in ''|*[!0-9]*) fail "unsupported version: $current" ;; esac
+case "$minor" in ''|*[!0-9]*) fail "unsupported version: $current" ;; esac
+case "$patch" in ''|*[!0-9]*) fail "unsupported version: $current" ;; esac
 
-case "$bump" in
-    current)
-        ;;
-    patch)
-        patch=$((patch + 1))
-        ;;
-    minor)
-        minor=$((minor + 1))
-        patch=0
-        ;;
-    major)
-        major=$((major + 1))
-        minor=0
-        patch=0
-        ;;
-esac
-
+patch=$((patch + 1))
 next="$major.$minor.$patch"
 today="$(date +%Y-%m-%d)"
 tmp="${TMPDIR:-/tmp}/jumper-release-bump-$$"
@@ -57,21 +30,18 @@ mkdir -p "$tmp"
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
 if grep -q "^## \[$next\]" CHANGELOG.md; then
-    echo "ERROR: CHANGELOG.md already has a $next release section." >&2
-    exit 1
+    fail "CHANGELOG.md already has a $next release section"
 fi
 
-if [ "$bump" != "current" ]; then
-    awk -v current="$current" -v target="$next" '
-        BEGIN { changed = 0 }
-        /^version = / && changed == 0 {
-            sub("version = \"" current "\"", "version = \"" target "\"")
-            changed = 1
-        }
-        { print }
-    ' Cargo.toml > "$tmp/Cargo.toml"
-    cat "$tmp/Cargo.toml" > Cargo.toml
-fi
+awk -v current="$current" -v target="$next" '
+    BEGIN { changed = 0 }
+    /^version = / && changed == 0 {
+        sub("version = \"" current "\"", "version = \"" target "\"")
+        changed = 1
+    }
+    { print }
+' Cargo.toml > "$tmp/Cargo.toml"
+cat "$tmp/Cargo.toml" > Cargo.toml
 
 awk -v version="$next" -v today="$today" '
     /^## \[Unreleased\]$/ {
@@ -86,9 +56,5 @@ cat "$tmp/CHANGELOG.md" > CHANGELOG.md
 
 cargo generate-lockfile
 
-if [ "$bump" = "current" ]; then
-    echo "Prepared jumper $next release metadata"
-else
-    echo "Bumped jumper from $current to $next"
-fi
+echo "Bumped jumper from $current to $next"
 echo "Review, commit, tag with make release-tag, then publish with make release-publish."

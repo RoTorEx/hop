@@ -9,4 +9,4 @@ Tracks real product and release progress.
 - Packaged the raw navigator as a Cargo-based Rust CLI.
 - Added a GitHub installer that builds from source into `~/.x-cli-jumper`.
 - Added release bump, tag, publish, and GitHub Actions binary build workflow.
-- Added a guarded one-command release flow with explicit confirmation.
+- Added a plain one-command release flow that follows the project release rules.
