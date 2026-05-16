@@ -1,43 +1,49 @@
-.PHONY: install deps-update build watch typecheck lint fmt test check run release-bump release-tag release-publish vibe-kernel-set vibe-kernel-path vibe-pull
+.PHONY: install deps-update build typecheck lint fmt test check run release-bump release-tag release-publish vibe-kernel-set vibe-kernel-path vibe-pull
 
 install:
-	@echo "TODO: implement a real install command for this project."; exit 1
+	cargo fetch --locked
 
 deps-update:
-	@echo "TODO: implement a real dependency update flow for this project."; exit 1
+	cargo update
 
 build:
-	@echo "TODO: implement a real build command for this project."; exit 1
-
-watch:
-	@echo "TODO: implement a real watch/dev command for this project."; exit 1
+	cargo build --release --locked
 
 typecheck:
-	@echo "TODO: implement a real typecheck command for this project."; exit 1
+	cargo check --locked --all-targets
 
 lint:
-	@echo "TODO: implement lint only if real lint exists."; exit 1
+	cargo clippy --locked --all-targets -- -D warnings
 
 fmt:
-	@echo "TODO: implement formatting only if real formatter exists."; exit 1
+	cargo fmt --all
 
 test:
-	@echo "TODO: implement tests only if real tests exist."; exit 1
+	cargo test --locked --all-targets
 
 check:
-	@echo "TODO: implement 'make check' as a real verification command."; exit 1
+	cargo fmt --all -- --check
+	cargo check --locked --all-targets
+	cargo clippy --locked --all-targets -- -D warnings
+	cargo test --locked --all-targets
+	cargo build --release --locked
 
 run:
-	@echo "TODO: implement a real run command for this project."; exit 1
+	cargo run --locked --
 
 release-bump:
-	@echo "TODO: implement release bump only if this project actually releases."; exit 1
+	scripts/release-bump.sh $(or $(BUMP),patch)
 
 release-tag:
-	@echo "TODO: implement release tagging only if this project actually releases."; exit 1
+	@if [ -n "$$(git status --porcelain)" ]; then echo "ERROR: commit or stash changes before tagging."; exit 1; fi
+	@version="$$(awk -F'"' '/^version = / { print $$2; exit }' Cargo.toml)"; \
+	if [ -z "$$version" ]; then echo "ERROR: could not read version."; exit 1; fi; \
+	if git rev-parse "v$$version" >/dev/null 2>&1; then echo "ERROR: tag v$$version already exists."; exit 1; fi; \
+	git tag -a "v$$version" -m "v$$version"; \
+	echo "Created tag v$$version"
 
 release-publish:
-	@echo "TODO: implement release publish/deploy only if this project actually releases."; exit 1
+	git push origin main --follow-tags
 
 vibe-kernel-path:
 	@if [ ! -f ".vibe/KERNEL_SOURCE" ]; then \

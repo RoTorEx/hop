@@ -1,5 +1,8 @@
 # jumper
-TODO: one-paragraph project description.
+
+Tiny interactive project navigator for shells on local machines, VMs, and VPS
+hosts. It scans for Git projects, lets you pick one, and prints only the chosen
+path so a shell wrapper can `cd` there cleanly.
 
 ## Quickstart
 
@@ -7,6 +10,75 @@ TODO: one-paragraph project description.
 make install
 make check
 ```
+
+Run locally:
+
+```bash
+make run
+```
+
+Install from GitHub on a VM/VPS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install.sh | sh
+```
+
+Pin a release or branch:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install.sh | sh -s -- --ref vX.Y.Z
+```
+
+The installer builds with Cargo, copies the binary to
+`~/.x-cli-jumper/jumper`, and adds this integration to bash/zsh profile files:
+
+```bash
+export PATH="$HOME/.x-cli-jumper:$PATH"
+
+j() {
+    local d
+    d="$(jumper "$@")" && [ -n "$d" ] && cd "$d"
+}
+```
+
+Open a new shell or source your profile, then run:
+
+```bash
+j
+```
+
+## Usage
+
+```bash
+jumper --help
+jumper --root /srv
+jumper --shell-init
+```
+
+All interactive UI is written to stderr. The selected path is the only stdout
+output, which keeps shell integration safe and predictable.
+
+## Release Flow
+
+Normal verification:
+
+```bash
+make check
+```
+
+Prepare a patch release:
+
+```bash
+make release-bump
+git add Cargo.toml Cargo.lock CHANGELOG.md
+git commit -m "build: bump version to vX.Y.Z"
+make release-tag
+make release-publish
+```
+
+Use `make release-bump BUMP=minor` or `make release-bump BUMP=major` for larger
+version changes. Pushing a `vX.Y.Z` tag triggers the GitHub Actions workflow that
+builds and attaches a Linux release binary.
 
 ## Kernel sync (sanity check)
 

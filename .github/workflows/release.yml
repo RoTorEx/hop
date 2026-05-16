@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Linux release binary
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp target/release/jumper dist/jumper
+          tar -C dist -czf jumper-linux-x86_64.tar.gz jumper
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jumper-linux-x86_64
+          path: jumper-linux-x86_64.tar.gz
+
+      - name: Publish GitHub release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" jumper-linux-x86_64.tar.gz --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" jumper-linux-x86_64.tar.gz \
+              --title "$GITHUB_REF_NAME" \
+              --notes "jumper $GITHUB_REF_NAME"
+          fi

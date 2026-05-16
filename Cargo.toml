@@ -1,0 +1,17 @@
+[package]
+name = "jumper"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Tiny interactive project navigator for shells on local machines, VMs, and VPS hosts."
+repository = "https://github.com/RoTorEx/jumper"
+publish = false
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+strip = "symbols"
+
+[lints.rust]
+unsafe_code = "forbid"
