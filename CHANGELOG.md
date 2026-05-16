@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-16
+
 ### Added
 
 - Packaged the raw navigator as a Cargo-based Rust CLI.
