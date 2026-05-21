@@ -4,6 +4,11 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Added
+
+- Added `GH_INSTALLER_TOKEN` support for authenticated installs and token-backed
+  `jumper update` downloads.
+
 ## [0.1.4] - 2026-05-21
 
 ### Changed

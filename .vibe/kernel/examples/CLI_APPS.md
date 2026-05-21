@@ -15,6 +15,7 @@ Every CLI app must provide:
 - a self-update command named `update`;
 - all installed binaries and runtime artifacts under `~/.x-cli-<project-name>`;
 - PATH setup that makes the installed binary available after install/update.
+- `GH_INSTALLER_TOKEN` as the default environment variable name for a user-supplied private GitHub installer token.
 
 Use the repository directory basename as `<project-name>` unless the project has one stable CLI name documented in its Makefile and README.
 
@@ -90,7 +91,8 @@ Rules:
 - create the token file with mode `0600`;
 - never commit the token;
 - never write the token to README examples, shell profiles, logs, release assets, or error output;
-- the installer may read the token from a prompt, GitHub CLI, or environment variable, but the updater must read it from `$(X_CLI_TOKEN_FILE)`;
+- the installer must accept `GH_INSTALLER_TOKEN` as the default environment variable for a user-supplied private GitHub token;
+- the installer may also read the token from a prompt or GitHub CLI, but the updater must read it from `$(X_CLI_TOKEN_FILE)`;
 - if the token is missing or invalid, the update command must explain how to refresh it without printing token contents.
 
 ## README install docs
@@ -106,7 +108,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | sh
 Private repo shape:
 
 ```sh
-GH_TOKEN="$(gh auth token)" sh -c 'curl -fsSL -H "Authorization: Bearer $GH_TOKEN" https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | GH_TOKEN="$GH_TOKEN" sh'
+GH_INSTALLER_TOKEN="$(gh auth token)" sh -c 'curl -fsSL -H "Authorization: Bearer $GH_INSTALLER_TOKEN" https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | GH_INSTALLER_TOKEN="$GH_INSTALLER_TOKEN" sh'
 ```
 
 Replace `<owner>` and `<repo>` before documenting. If the project uses a different installer URL, document the exact real command.

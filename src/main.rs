@@ -75,12 +75,15 @@ fn run_update(color: bool) -> ExitCode {
             );
         }
     };
-    let release_url = format!("{RELEASE_BASE_URL}/{release_asset}");
-
     let current_exe = match env::current_exe() {
         Ok(path) => path,
         Err(error) => return fail(&format!("Cannot locate current executable: {error}"), color),
     };
+    let update_token = match read_update_token(&current_exe) {
+        Ok(token) => token,
+        Err(message) => return fail(&message, color),
+    };
+    let release_url = format!("{RELEASE_BASE_URL}/{release_asset}");
 
     let temp_dir = env::temp_dir().join(format!("jumper-update-{}", std::process::id()));
     if let Err(error) = recreate_dir(&temp_dir) {
@@ -104,7 +107,7 @@ fn run_update(color: bool) -> ExitCode {
         "{}",
         paint(color, DIM, &format!("Downloading {release_url}")),
     );
-    if let Err(message) = download_release(&release_url, &archive) {
+    if let Err(message) = download_release(&release_url, &archive, update_token.as_deref()) {
         cleanup_dir(&temp_dir);
         return fail(&message, color);
     }
@@ -298,7 +301,53 @@ fn release_asset_name() -> Option<&'static str> {
     }
 }
 
-fn download_release(url: &str, destination: &Path) -> Result<(), String> {
+fn read_update_token(current_exe: &Path) -> Result<Option<String>, String> {
+    let Some(parent) = current_exe.parent() else {
+        return Ok(None);
+    };
+    let token_file = parent.join("gh-token");
+    let token = match fs::read_to_string(&token_file) {
+        Ok(token) => token,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => {
+            return Err(
+                "Cannot read stored GitHub token; rerun the installer with GH_INSTALLER_TOKEN."
+                    .to_owned(),
+            );
+        }
+    };
+    let token = token.trim();
+    if token.is_empty() {
+        return Ok(None);
+    }
+    if token.contains(['\r', '\n']) {
+        return Err(
+            "Stored GitHub token is invalid; rerun the installer with GH_INSTALLER_TOKEN."
+                .to_owned(),
+        );
+    }
+
+    Ok(Some(token.to_owned()))
+}
+
+fn download_release(
+    url: &str,
+    destination: &Path,
+    update_token: Option<&str>,
+) -> Result<(), String> {
+    if let Some(token) = update_token {
+        if !command_exists("curl") {
+            return Err("Authenticated updates require curl; install curl and retry.".to_owned());
+        }
+        if run_curl_config(&authenticated_curl_config(url, destination, token)) {
+            return Ok(());
+        }
+        return Err(
+            "Could not download latest release with stored GitHub token; rerun the installer with GH_INSTALLER_TOKEN or check token access."
+                .to_owned(),
+        );
+    }
+
     if run_status(
         ProcessCommand::new("curl")
             .arg("-fsSL")
@@ -319,6 +368,54 @@ fn download_release(url: &str, destination: &Path) -> Result<(), String> {
     }
 
     Err("Could not download latest release; install curl or wget.".to_owned())
+}
+
+fn authenticated_curl_config(url: &str, destination: &Path, token: &str) -> String {
+    format!(
+        "fail\nshow-error\nsilent\nlocation\nurl = \"{}\"\noutput = \"{}\"\nheader = \"Authorization: Bearer {}\"\n",
+        curl_config_quote(url),
+        curl_config_quote(&destination.display().to_string()),
+        curl_config_quote(token),
+    )
+}
+
+fn curl_config_quote(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn run_curl_config(config: &str) -> bool {
+    let Ok(mut child) = ProcessCommand::new("curl")
+        .arg("-K")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    let Some(mut stdin) = child.stdin.take() else {
+        return false;
+    };
+    if stdin.write_all(config.as_bytes()).is_err() {
+        return false;
+    }
+    drop(stdin);
+
+    match child.wait() {
+        Ok(status) => status.success(),
+        Err(_) => false,
+    }
+}
+
+fn command_exists(program: &str) -> bool {
+    ProcessCommand::new(program)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
 }
 
 fn install_updated_binary(source: &Path, destination: &Path) -> io::Result<()> {

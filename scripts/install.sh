@@ -17,6 +17,7 @@ Environment:
   JUMPER_REPO          GitHub repo, default RoTorEx/jumper
   JUMPER_REF           branch, tag, or commit, default main
   JUMPER_INSTALL_DIR   install directory, default ~/.x-cli-jumper
+  GH_INSTALLER_TOKEN   GitHub token for private repo installs
 
 The installer builds with Cargo, copies the jumper binary into the install
 directory, and updates bash/zsh profile files with the PATH and j() shell wrapper.
@@ -26,6 +27,7 @@ USAGE
 repo="${JUMPER_REPO:-$repo}"
 ref="${JUMPER_REF:-$ref}"
 install_dir="${JUMPER_INSTALL_DIR:-$install_dir}"
+installer_token="${GH_INSTALLER_TOKEN:-}"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -105,7 +107,21 @@ trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
 url="https://github.com/$repo/archive/$ref.tar.gz"
 echo "Downloading $url"
-if command -v curl >/dev/null 2>&1; then
+if [ -n "$installer_token" ]; then
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "ERROR: curl is required for authenticated installs." >&2
+        exit 1
+    fi
+    {
+        printf 'fail\n'
+        printf 'show-error\n'
+        printf 'silent\n'
+        printf 'location\n'
+        printf 'url = "%s"\n' "$url"
+        printf 'output = "%s"\n' "$archive"
+        printf 'header = "Authorization: Bearer %s"\n' "$installer_token"
+    } | curl -K -
+elif command -v curl >/dev/null 2>&1; then
     curl -fsSL "$url" -o "$archive"
 elif command -v wget >/dev/null 2>&1; then
     wget -qO "$archive" "$url"
@@ -127,6 +143,11 @@ echo "Building jumper"
 mkdir -p "$install_dir"
 cp "$source_dir/target/release/jumper" "$install_dir/jumper"
 chmod 0755 "$install_dir/jumper"
+if [ -n "$installer_token" ]; then
+    token_file="$install_dir/gh-token"
+    (umask 077 && printf "%s\n" "$installer_token" > "$token_file")
+    chmod 0600 "$token_file"
+fi
 
 profile_block() {
     "$install_dir/jumper" --shell-init

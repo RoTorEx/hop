@@ -23,6 +23,13 @@ Install from GitHub on a VM/VPS:
 curl -fsSL https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install.sh | sh
 ```
 
+If the source repository requires GitHub authentication, pass the installer
+token as `GH_INSTALLER_TOKEN`:
+
+```bash
+GH_INSTALLER_TOKEN="$(gh auth token)" sh -c 'curl -fsSL -H "Authorization: Bearer $GH_INSTALLER_TOKEN" https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install.sh | GH_INSTALLER_TOKEN="$GH_INSTALLER_TOKEN" sh'
+```
+
 Pin a release or branch:
 
 ```bash
@@ -30,7 +37,9 @@ curl -fsSL https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install
 ```
 
 The installer builds with Cargo, copies the binary to
-`~/.x-cli-jumper/jumper`, and adds this integration to bash/zsh profile files:
+`~/.x-cli-jumper/jumper`, stores a supplied private repo update token at
+`~/.x-cli-jumper/gh-token` with file mode `0600`, and adds this integration to
+bash/zsh profile files:
 
 ```bash
 export PATH="$HOME/.x-cli-jumper:$PATH"
@@ -78,7 +87,8 @@ and predictable. Copy mode writes no stdout and copies the selected path with
 
 `jumper update` replaces the current executable with the latest Linux binary for
 the current CPU architecture from GitHub Releases. It requires `curl` or `wget`,
-plus `tar`.
+plus `tar`. If `~/.x-cli-jumper/gh-token` exists, updates use that token for
+GitHub authentication.
 
 ## Release Flow
 
