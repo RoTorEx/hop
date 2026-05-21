@@ -39,7 +39,7 @@ j() {
     local arg
     for arg in "$@"; do
         case "$arg" in
-            -h|--help|-V|--version|--shell-init|update)
+            -h|--help|-v|-V|--version|--shell-init|update)
                 jumper "$@"
                 return
                 ;;
@@ -63,6 +63,7 @@ j --copy-path A1
 
 ```bash
 jumper --help
+jumper -v
 jumper A1
 jumper --copy-path A1
 jumper update
@@ -70,10 +71,10 @@ jumper --root /srv
 jumper --shell-init
 ```
 
-All interactive UI is written to stderr. Jump mode prints the selected path as
-the only stdout output, which keeps shell integration safe and predictable.
-Copy mode writes no stdout and copies the selected path with `pbcopy`,
-`wl-copy`, `xclip`, or `xsel`.
+Interactive UI, help, and version output are written to stderr. Jump mode prints
+the selected path as the only stdout output, which keeps shell integration safe
+and predictable. Copy mode writes no stdout and copies the selected path with
+`pbcopy`, `wl-copy`, `xclip`, or `xsel`.
 
 `jumper update` replaces the current executable with the latest Linux binary for
 the current CPU architecture from GitHub Releases. It requires `curl` or `wget`,

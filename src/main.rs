@@ -45,11 +45,15 @@ fn main() -> ExitCode {
 
     match options.command {
         Command::Help => {
-            print_help();
+            print_help(options.color);
             ExitCode::SUCCESS
         }
         Command::Version => {
-            println!("{APP_NAME} {VERSION}");
+            eprintln!(
+                "{} {}",
+                paint(options.color, BOLD, &title_case(APP_NAME)),
+                paint(options.color, DIM, &format!("v{VERSION}")),
+            );
             ExitCode::SUCCESS
         }
         Command::ShellInit => {
@@ -381,7 +385,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "-h" | "--help" => command = Command::Help,
-            "-V" | "--version" => command = Command::Version,
+            "-v" | "-V" | "--version" => command = Command::Version,
             "--shell-init" => command = Command::ShellInit,
             "--copy-path" => copy_path = true,
             "--no-color" => color = false,
@@ -508,32 +512,37 @@ fn title_case(value: &str) -> String {
     }
 }
 
-fn print_help() {
-    println!(
-        "{APP_NAME} {VERSION}
+fn print_help(color: bool) {
+    eprintln!(
+        "{} {}
 
 Tiny interactive project navigator for shells on local machines, VMs, and VPS hosts.
 
-USAGE:
+{}:
     jumper [<target>] [--copy-path] [--root <dir>] [--no-color]
     jumper update
     jumper --shell-init
     jumper --version
 
-COMMANDS:
+{}:
     update           Update this executable from the latest GitHub release
 
-OPTIONS:
+{}:
     --copy-path      Copy the selected path instead of printing it
     --root <dir>      Scan a directory instead of $HOME
     --no-color        Disable ANSI color output
     --shell-init      Print bash/zsh integration for the j command
-    -V, --version     Print version
+    -v, -V, --version Print version
     -h, --help        Print help
 
 The interactive UI writes to stderr. Jump mode prints only the selected project
 path to stdout, so a shell wrapper can safely cd into it. Copy mode writes no
-stdout and copies the selected project path to the clipboard."
+stdout and copies the selected project path to the clipboard.",
+        paint(color, BOLD, &title_case(APP_NAME)),
+        paint(color, DIM, &format!("v{VERSION}")),
+        paint(color, BLUE, "USAGE"),
+        paint(color, BLUE, "COMMANDS"),
+        paint(color, BLUE, "OPTIONS"),
     );
 }
 
@@ -546,7 +555,7 @@ j() {{
     local arg
     for arg in "$@"; do
         case "$arg" in
-            -h|--help|-V|--version|--shell-init|update)
+            -h|--help|-v|-V|--version|--shell-init|update)
                 jumper "$@"
                 return
                 ;;
