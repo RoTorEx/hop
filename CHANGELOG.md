@@ -4,6 +4,16 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Added
+
+- Added `make version` as the standard repo command for checking the CLI
+  version.
+
+### Fixed
+
+- Fixed the `j` shell wrapper so help, version, shell-init, and update commands
+  run directly instead of being treated as jump paths.
+
 ## [0.1.2] - 2026-05-21
 
 ### Added

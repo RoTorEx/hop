@@ -36,6 +36,16 @@ The installer builds with Cargo, copies the binary to
 export PATH="$HOME/.x-cli-jumper:$PATH"
 
 j() {
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            -h|--help|-V|--version|--shell-init|update)
+                jumper "$@"
+                return
+                ;;
+        esac
+    done
+
     local d
     d="$(jumper "$@")" && [ -n "$d" ] && cd "$d"
 }
@@ -75,6 +85,7 @@ Normal verification:
 
 ```bash
 make check
+make version
 ```
 
 One-command guarded release:
