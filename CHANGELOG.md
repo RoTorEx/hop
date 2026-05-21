@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-21
+
 ### Added
 
 - Added `jumper update` to update the current executable from the latest GitHub
