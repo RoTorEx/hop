@@ -10,6 +10,10 @@ Native tool configuration remains local:
 - Docker files
 - CI files
 
+For Rust/Cargo projects, use `.vibe/kernel/examples/RUST_PROJECTS.md` for the shared Cargo target directory convention while keeping project-specific Cargo flags local.
+
+For projects that generate `dist/`, use `.vibe/kernel/examples/DIST_ARTIFACTS.md` for the shared distribution artifact directory convention while keeping project-specific build flags local.
+
 ## Recommended targets
 
 Keep the Makefile command surface stable and predictable across child projects.
@@ -26,12 +30,13 @@ Canonical target set (keep the same names, semantics, and *rough* order; omit on
 8. `make test` — tests if real tests exist
 9. `make check` — main verification command (the “verify this repo” entrypoint)
 10. `make run` — local run
-11. `make release-bump` — bump version if release flow exists
-12. `make release-tag` — create release tag if release flow exists
-13. `make release-publish` — publish/deploy if release flow exists
-14. `make vibe-kernel-path` — print the current kernel source path (`.vibe/KERNEL_SOURCE`)
-15. `make vibe-kernel-set` — set/update `.vibe/KERNEL_SOURCE` (interactive prompt, or pass `KERNEL=/abs/path/to/vibecoding-kernel`)
-16. `make vibe-pull` — refresh `.vibe/kernel/*.md` from the parent kernel
+11. `make release` — prepare a release if release flow exists
+12. `make release-tag` — create only the release tag if a manual escape hatch is useful
+13. `make release-push` — push the release commit and tags
+14. `make release-publish` — publish/deploy non-git artifacts only if the project needs it
+15. `make vibe-kernel-path` — print the current kernel source path (`.vibe/KERNEL_SOURCE`)
+16. `make vibe-kernel-set` — set/update `.vibe/KERNEL_SOURCE` (interactive prompt, or pass `KERNEL=/abs/path/to/vibecoding-kernel`)
+17. `make vibe-pull` — refresh `.vibe/kernel/*.md` from the parent kernel
 
 ## Rules
 
@@ -40,9 +45,32 @@ Canonical target set (keep the same names, semantics, and *rough* order; omit on
 - Prefer invoking `make <target>` in docs/instructions instead of raw tool commands (`npm`, `uv`, `cargo`, etc.). Make wraps the native tooling for the current repo.
 - Do not force release targets on projects that do not release.
 - Do not perform version bumps, tags, publishing, or deployments without explicit user approval.
-- When release targets exist, use the Makefile release interface (`make release-bump`, `make release-tag`, `make release-publish`) instead of ad-hoc commands.
+- When release targets exist, use the Makefile release interface (`make release`, then `make release-push` or a project-specific publish command) instead of ad-hoc commands.
 - `make check` should be the stable “verify this repo” command.
 - Makefile should wrap native tools, not replace them.
+- Keep public commands plain. Ordinary use should not require flags, environment variables, or extra arguments.
+- When a human decision is required, prompt inside the command instead of asking the user to remember a variable.
+
+## Makefile shape
+
+Prefer one clean Makefile as the repo service panel:
+
+- Keep common commands discoverable in one file unless the implementation is genuinely too large.
+- Use small helper targets for repeated checks and native-tool orchestration.
+- Keep variables for internal defaults and project-specific operations; do not make routine user commands depend on remembering variables.
+- Let native scripts do complex stack-specific work when needed, but keep the public command name stable.
+
+## Release command contract
+
+For projects that release, the normal release interface is exact and flagless:
+
+- `make release` prompts for the target `MAJOR.MINOR.PATCH` version.
+- The entered version is the source of truth. Do not calculate patch/minor/major versions for the normal path.
+- `make release` validates the version, refuses an existing `vMAJOR.MINOR.PATCH` tag, updates native version files and lock/release metadata, updates `CHANGELOG.md` if the repo uses one, creates a dedicated release commit, and creates an annotated tag.
+- `make release` does not deploy by itself.
+- `make release-push` pushes `main` and tags, normally `git push origin main --follow-tags`.
+- `make release-publish` is optional and means project-specific artifact publishing or deploy handoff after the release tag exists.
+- Lower-level targets such as `release-tag` may exist as implementation pieces or manual escape hatches, but docs and agents should present `make release` as the normal command.
 
 ## Git hook gates (optional)
 

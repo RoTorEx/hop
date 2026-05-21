@@ -1,4 +1,9 @@
-.PHONY: install deps-update build typecheck lint fmt test check run version release release-bump release-tag release-publish vibe-kernel-set vibe-kernel-path vibe-pull
+.PHONY: install deps-update cargo-target-dir build typecheck lint fmt test check run version release release-tag release-push vibe-kernel-set vibe-kernel-path vibe-pull
+
+PROJECT_NAME := $(notdir $(CURDIR))
+CONSTRUCTION_SIDE := $(HOME)/construction_side
+CARGO_TARGET_DIR := $(CONSTRUCTION_SIDE)/$(PROJECT_NAME)/target
+export CARGO_TARGET_DIR
 
 install:
 	cargo fetch --locked
@@ -6,39 +11,39 @@ install:
 deps-update:
 	cargo update
 
-build:
+cargo-target-dir:
+	@mkdir -p "$(CARGO_TARGET_DIR)"
+
+build: cargo-target-dir
 	cargo build --release --locked
 
-typecheck:
+typecheck: cargo-target-dir
 	cargo check --locked --all-targets
 
-lint:
+lint: cargo-target-dir
 	cargo clippy --locked --all-targets -- -D warnings
 
 fmt:
 	cargo fmt --all
 
-test:
+test: cargo-target-dir
 	cargo test --locked --all-targets
 
-check:
+check: cargo-target-dir
 	cargo fmt --all -- --check
 	cargo check --locked --all-targets
 	cargo clippy --locked --all-targets -- -D warnings
 	cargo test --locked --all-targets
 	cargo build --release --locked
 
-run:
+run: cargo-target-dir
 	cargo run --locked --
 
-version:
+version: cargo-target-dir
 	cargo run --locked -- --version
 
 release:
 	scripts/release.sh
-
-release-bump:
-	scripts/release-bump.sh
 
 release-tag:
 	@if [ -n "$$(git status --porcelain)" ]; then echo "ERROR: commit or stash changes before tagging."; exit 1; fi
@@ -48,7 +53,7 @@ release-tag:
 	git tag -a "v$$version" -m "v$$version"; \
 	echo "Created tag v$$version"
 
-release-publish:
+release-push:
 	git push origin main --follow-tags
 
 vibe-kernel-path:

@@ -16,17 +16,23 @@ fi
 
 echo "[pre-push] make lint"
 out="$(mktemp)"
-if make lint >"$$out" 2>&1; then
-  rm -f "$$out"
+if make lint >"$out" 2>&1; then
+  rm -f "$out"
   exit 0
 fi
 
-if grep -Fq "TODO: implement lint only if real lint exists." "$$out"; then
+if grep -Fq "TODO: implement lint only if real lint exists." "$out"; then
   echo "[pre-push] lint target is a placeholder; skipping lint hook." >&2
-  rm -f "$$out"
+  rm -f "$out"
   exit 0
 fi
 
-cat "$$out" >&2
-rm -f "$$out"
+if grep -Fq "lint is not configured" "$out"; then
+  echo "[pre-push] lint is not configured in this repo; skipping lint hook." >&2
+  rm -f "$out"
+  exit 0
+fi
+
+cat "$out" >&2
+rm -f "$out"
 exit 1

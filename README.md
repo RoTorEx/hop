@@ -92,21 +92,12 @@ One-command guarded release:
 
 ```bash
 make release
+make release-push
 ```
 
-That command runs checks, finalizes the current version when it has no tag yet,
-or bumps the patch version for later releases, creates a dedicated release
-commit, creates a `vX.Y.Z` tag, and pushes `main` with tags.
-
-Prepare the same flow manually:
-
-```bash
-make release-bump
-git add Cargo.toml Cargo.lock CHANGELOG.md
-git commit -m "build: bump version to vX.Y.Z"
-make release-tag
-make release-publish
-```
+`make release` prompts for the exact `MAJOR.MINOR.PATCH` version, runs checks,
+updates release metadata, creates a dedicated release commit, and creates a
+`vX.Y.Z` tag. `make release-push` pushes `main` and tags.
 
 Pushing a `vX.Y.Z` tag triggers the GitHub Actions workflow that builds and
 attaches Linux x86_64 and aarch64 release binaries.

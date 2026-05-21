@@ -4,6 +4,11 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Changed
+
+- Standardized the Makefile release flow and Cargo build artifact path against
+  the refreshed Vibecoding Kernel rules.
+
 ## [0.1.3] - 2026-05-21
 
 ### Added
