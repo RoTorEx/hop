@@ -1,11 +1,13 @@
 use std::env;
+use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
 use jumper::{APP_NAME, ChoiceParseError, Sector, discover_projects, group_projects, parse_choice};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const RELEASE_BASE_URL: &str = "https://github.com/RoTorEx/jumper/releases/latest/download";
 
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
@@ -23,6 +25,7 @@ enum Command {
     Help,
     Version,
     ShellInit,
+    Update,
 }
 
 #[derive(Debug)]
@@ -53,8 +56,86 @@ fn main() -> ExitCode {
             print_shell_init();
             ExitCode::SUCCESS
         }
+        Command::Update => run_update(options.color),
         Command::Jump => run_jump(options),
     }
+}
+
+fn run_update(color: bool) -> ExitCode {
+    let release_asset = match release_asset_name() {
+        Some(asset) => asset,
+        None => {
+            return fail(
+                "jumper update currently supports Linux release builds only.",
+                color,
+            );
+        }
+    };
+    let release_url = format!("{RELEASE_BASE_URL}/{release_asset}");
+
+    let current_exe = match env::current_exe() {
+        Ok(path) => path,
+        Err(error) => return fail(&format!("Cannot locate current executable: {error}"), color),
+    };
+
+    let temp_dir = env::temp_dir().join(format!("jumper-update-{}", std::process::id()));
+    if let Err(error) = recreate_dir(&temp_dir) {
+        return fail(
+            &format!("Cannot prepare {}: {error}", temp_dir.display()),
+            color,
+        );
+    }
+
+    let archive = temp_dir.join(release_asset);
+    let extract_dir = temp_dir.join("extract");
+    if let Err(error) = fs::create_dir_all(&extract_dir) {
+        cleanup_dir(&temp_dir);
+        return fail(
+            &format!("Cannot prepare {}: {error}", extract_dir.display()),
+            color,
+        );
+    }
+
+    eprintln!(
+        "{}",
+        paint(color, DIM, &format!("Downloading {release_url}")),
+    );
+    if let Err(message) = download_release(&release_url, &archive) {
+        cleanup_dir(&temp_dir);
+        return fail(&message, color);
+    }
+
+    if !run_status(
+        ProcessCommand::new("tar")
+            .arg("-xzf")
+            .arg(&archive)
+            .arg("-C")
+            .arg(&extract_dir),
+    ) {
+        cleanup_dir(&temp_dir);
+        return fail("Could not extract release archive; install tar.", color);
+    }
+
+    let updated = extract_dir.join(APP_NAME);
+    if !updated.is_file() {
+        cleanup_dir(&temp_dir);
+        return fail("Release archive did not contain a jumper binary.", color);
+    }
+
+    if let Err(error) = install_updated_binary(&updated, &current_exe) {
+        cleanup_dir(&temp_dir);
+        return fail(
+            &format!("Cannot update {}: {error}", current_exe.display()),
+            color,
+        );
+    }
+
+    cleanup_dir(&temp_dir);
+    eprintln!(
+        "{}",
+        paint(color, GREEN, &format!("Updated {}", current_exe.display()),),
+    );
+    ExitCode::SUCCESS
 }
 
 fn run_jump(options: Options) -> ExitCode {
@@ -205,6 +286,90 @@ fn copy_to_clipboard(path: &std::path::Path, color: bool) -> ExitCode {
     )
 }
 
+fn release_asset_name() -> Option<&'static str> {
+    match (env::consts::OS, env::consts::ARCH) {
+        ("linux", "x86_64") => Some("jumper-linux-x86_64.tar.gz"),
+        ("linux", "aarch64") => Some("jumper-linux-aarch64.tar.gz"),
+        _ => None,
+    }
+}
+
+fn download_release(url: &str, destination: &Path) -> Result<(), String> {
+    if run_status(
+        ProcessCommand::new("curl")
+            .arg("-fsSL")
+            .arg(url)
+            .arg("-o")
+            .arg(destination),
+    ) {
+        return Ok(());
+    }
+
+    if run_status(
+        ProcessCommand::new("wget")
+            .arg("-qO")
+            .arg(destination)
+            .arg(url),
+    ) {
+        return Ok(());
+    }
+
+    Err("Could not download latest release; install curl or wget.".to_owned())
+}
+
+fn install_updated_binary(source: &Path, destination: &Path) -> io::Result<()> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| io::Error::other("executable has no parent directory"))?;
+    let temp_destination = parent.join(format!(".jumper-update-{}", std::process::id()));
+
+    let result = (|| {
+        fs::copy(source, &temp_destination)?;
+        set_executable(&temp_destination)?;
+        fs::rename(&temp_destination, destination)
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&temp_destination);
+    }
+
+    result
+}
+
+fn recreate_dir(path: &Path) -> io::Result<()> {
+    cleanup_dir(path);
+    fs::create_dir_all(path)
+}
+
+fn cleanup_dir(path: &Path) {
+    let _ = fs::remove_dir_all(path);
+}
+
+fn run_status(command: &mut ProcessCommand) -> bool {
+    match command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+    {
+        Ok(status) => status.success(),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+        Err(_) => false,
+    }
+}
+
+#[cfg(unix)]
+fn set_executable(path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+}
+
+#[cfg(not(unix))]
+fn set_executable(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
 fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut command = Command::Jump;
     let mut root = None;
@@ -235,7 +400,16 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
                 root = Some(PathBuf::from(value));
             }
             _ if arg.starts_with('-') => return Err(format!("unknown argument: {arg}")),
+            "update" if target.is_none() => {
+                if command != Command::Jump {
+                    return Err(format!("unexpected argument: {arg}"));
+                }
+                command = Command::Update;
+            }
             _ => {
+                if command == Command::Update {
+                    return Err(format!("unexpected argument: {arg}"));
+                }
                 if target.is_some() {
                     return Err(format!("unexpected argument: {arg}"));
                 }
@@ -342,8 +516,12 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 
 USAGE:
     jumper [<target>] [--copy-path] [--root <dir>] [--no-color]
+    jumper update
     jumper --shell-init
     jumper --version
+
+COMMANDS:
+    update           Update this executable from the latest GitHub release
 
 OPTIONS:
     --copy-path      Copy the selected path instead of printing it

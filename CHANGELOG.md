@@ -4,6 +4,12 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Added
+
+- Added `jumper update` to update the current executable from the latest GitHub
+  release.
+- Added Linux aarch64 release binaries for updater support on ARM hosts.
+
 ## [0.1.1] - 2026-05-21
 
 ### Added

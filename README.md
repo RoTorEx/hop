@@ -55,6 +55,7 @@ j --copy-path A1
 jumper --help
 jumper A1
 jumper --copy-path A1
+jumper update
 jumper --root /srv
 jumper --shell-init
 ```
@@ -63,6 +64,10 @@ All interactive UI is written to stderr. Jump mode prints the selected path as
 the only stdout output, which keeps shell integration safe and predictable.
 Copy mode writes no stdout and copies the selected path with `pbcopy`,
 `wl-copy`, `xclip`, or `xsel`.
+
+`jumper update` replaces the current executable with the latest Linux binary for
+the current CPU architecture from GitHub Releases. It requires `curl` or `wget`,
+plus `tar`.
 
 ## Release Flow
 
@@ -93,7 +98,7 @@ make release-publish
 ```
 
 Pushing a `vX.Y.Z` tag triggers the GitHub Actions workflow that builds and
-attaches a Linux release binary.
+attaches Linux x86_64 and aarch64 release binaries.
 
 ## Kernel sync (sanity check)
 

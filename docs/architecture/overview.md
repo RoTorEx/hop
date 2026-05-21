@@ -26,6 +26,9 @@ the parent shell's working directory.
 - The CLI reads local directory metadata only.
 - The CLI does not write local state, config, logs, or telemetry, except when
   `--copy-path` explicitly writes the selected path to the system clipboard.
-- Network access is limited to the optional installer and GitHub release flow.
+- Network access is limited to the optional installer, GitHub release flow, and
+  explicit `jumper update` command.
 - Installation writes one binary to `~/.x-cli-jumper/jumper` and may update
   bash/zsh profile files with an idempotent marked block.
+- `jumper update` downloads the latest matching Linux release archive from
+  GitHub Releases and replaces the current executable.
