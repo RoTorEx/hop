@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-21
+
 ### Changed
 
 - Standardized the Makefile release flow and Cargo build artifact path against
