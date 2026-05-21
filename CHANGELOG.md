@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-05-21
+
 ### Added
 
 - Added `make version` as the standard repo command for checking the CLI
