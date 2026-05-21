@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-05-22
+
 ### Added
 
 - Added `GH_INSTALLER_TOKEN` support for authenticated installs and token-backed
