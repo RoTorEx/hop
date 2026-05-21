@@ -45,18 +45,24 @@ Open a new shell or source your profile, then run:
 
 ```bash
 j
+j A1
+j --copy-path A1
 ```
 
 ## Usage
 
 ```bash
 jumper --help
+jumper A1
+jumper --copy-path A1
 jumper --root /srv
 jumper --shell-init
 ```
 
-All interactive UI is written to stderr. The selected path is the only stdout
-output, which keeps shell integration safe and predictable.
+All interactive UI is written to stderr. Jump mode prints the selected path as
+the only stdout output, which keeps shell integration safe and predictable.
+Copy mode writes no stdout and copies the selected path with `pbcopy`,
+`wl-copy`, `xclip`, or `xsel`.
 
 ## Release Flow
 

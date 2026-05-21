@@ -4,6 +4,12 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Added
+
+- Added direct target selection with `jumper <target>` and shell wrapper support
+  for `j <target>`.
+- Added `--copy-path` to copy the selected project path instead of jumping.
+
 ## [0.1.0] - 2026-05-16
 
 ### Added

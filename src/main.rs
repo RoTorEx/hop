@@ -1,7 +1,7 @@
 use std::env;
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process::ExitCode;
+use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
 use jumper::{APP_NAME, ChoiceParseError, Sector, discover_projects, group_projects, parse_choice};
 
@@ -29,6 +29,8 @@ enum Command {
 struct Options {
     command: Command,
     root: Option<PathBuf>,
+    target: Option<String>,
+    copy_path: bool,
     color: bool,
 }
 
@@ -79,16 +81,21 @@ fn run_jump(options: Options) -> ExitCode {
     }
 
     let sectors = group_projects(&root, projects);
+
+    if let Some(target) = options.target {
+        return choose_target(&sectors, &target, options.copy_path, options.color);
+    }
+
     render(&sectors, options.color);
-    prompt_loop(&sectors, options.color)
+    prompt_loop(&sectors, options.copy_path, options.color)
 }
 
-fn prompt_loop(sectors: &[Sector], color: bool) -> ExitCode {
+fn prompt_loop(sectors: &[Sector], copy_path: bool, color: bool) -> ExitCode {
     loop {
         eprint!(
             "  {} {} {}: ",
             paint(color, BLUE, ">"),
-            paint(color, BOLD, "jump to"),
+            paint(color, BOLD, if copy_path { "copy" } else { "jump to" }),
             paint(color, DIM, "<sector><position>"),
         );
         if io::stderr().flush().is_err() {
@@ -109,23 +116,100 @@ fn prompt_loop(sectors: &[Sector], color: bool) -> ExitCode {
             }
         };
 
-        let Some(sector) = sectors.get(choice.sector_index) else {
-            warn("No such sector", color);
-            continue;
-        };
-        let Some(path) = sector.paths.get(choice.project_index) else {
-            warn("No such project", color);
+        match path_for_choice(sectors, choice) {
+            Ok(path) => return emit_path(path, copy_path, color),
+            Err(message) => warn(message, color),
+        }
+    }
+}
+
+fn choose_target(sectors: &[Sector], target: &str, copy_path: bool, color: bool) -> ExitCode {
+    let choice = match parse_choice(target) {
+        Ok(choice) => choice,
+        Err(error) => return fail(error.message(), color),
+    };
+
+    match path_for_choice(sectors, choice) {
+        Ok(path) => emit_path(path, copy_path, color),
+        Err(message) => fail(message, color),
+    }
+}
+
+fn path_for_choice(
+    sectors: &[Sector],
+    choice: jumper::Choice,
+) -> Result<&std::path::Path, &'static str> {
+    let Some(sector) = sectors.get(choice.sector_index) else {
+        return Err("No such sector");
+    };
+    let Some(path) = sector.paths.get(choice.project_index) else {
+        return Err("No such project");
+    };
+
+    Ok(path)
+}
+
+fn emit_path(path: &std::path::Path, copy_path: bool, color: bool) -> ExitCode {
+    if copy_path {
+        return copy_to_clipboard(path, color);
+    }
+
+    println!("{}", path.display());
+    ExitCode::SUCCESS
+}
+
+fn copy_to_clipboard(path: &std::path::Path, color: bool) -> ExitCode {
+    let value = path.display().to_string();
+    let commands: &[(&str, &[&str])] = &[
+        ("pbcopy", &[]),
+        ("wl-copy", &[]),
+        ("xclip", &["-selection", "clipboard"]),
+        ("xsel", &["--clipboard", "--input"]),
+    ];
+
+    for (program, args) in commands {
+        let Ok(mut child) = ProcessCommand::new(program)
+            .args(*args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        else {
             continue;
         };
 
-        println!("{}", path.display());
-        return ExitCode::SUCCESS;
+        let Some(mut stdin) = child.stdin.take() else {
+            continue;
+        };
+        if stdin.write_all(value.as_bytes()).is_err() {
+            continue;
+        }
+        drop(stdin);
+
+        match child.wait() {
+            Ok(status) if status.success() => {
+                eprintln!(
+                    "  {} {}",
+                    paint(color, GREEN, "copied"),
+                    paint(color, DIM, &value),
+                );
+                return ExitCode::SUCCESS;
+            }
+            _ => continue,
+        }
     }
+
+    fail(
+        "Could not copy path; install pbcopy, wl-copy, xclip, or xsel.",
+        color,
+    )
 }
 
 fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut command = Command::Jump;
     let mut root = None;
+    let mut target = None;
+    let mut copy_path = false;
     let mut color = colors_enabled();
     let mut args = args.peekable();
 
@@ -134,6 +218,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
             "-h" | "--help" => command = Command::Help,
             "-V" | "--version" => command = Command::Version,
             "--shell-init" => command = Command::ShellInit,
+            "--copy-path" => copy_path = true,
             "--no-color" => color = false,
             "--root" => {
                 let Some(value) = args.next() else {
@@ -149,13 +234,21 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
                     .ok_or_else(|| "--root requires a directory".to_owned())?;
                 root = Some(PathBuf::from(value));
             }
-            _ => return Err(format!("unknown argument: {arg}")),
+            _ if arg.starts_with('-') => return Err(format!("unknown argument: {arg}")),
+            _ => {
+                if target.is_some() {
+                    return Err(format!("unexpected argument: {arg}"));
+                }
+                target = Some(arg);
+            }
         }
     }
 
     Ok(Options {
         command,
         root,
+        target,
+        copy_path,
         color,
     })
 }
@@ -248,19 +341,21 @@ fn print_help() {
 Tiny interactive project navigator for shells on local machines, VMs, and VPS hosts.
 
 USAGE:
-    jumper [--root <dir>] [--no-color]
+    jumper [<target>] [--copy-path] [--root <dir>] [--no-color]
     jumper --shell-init
     jumper --version
 
 OPTIONS:
+    --copy-path      Copy the selected path instead of printing it
     --root <dir>      Scan a directory instead of $HOME
     --no-color        Disable ANSI color output
     --shell-init      Print bash/zsh integration for the j command
     -V, --version     Print version
     -h, --help        Print help
 
-The interactive UI writes to stderr. The selected project path is the only stdout
-output, so a shell wrapper can safely cd into it."
+The interactive UI writes to stderr. Jump mode prints only the selected project
+path to stdout, so a shell wrapper can safely cd into it. Copy mode writes no
+stdout and copies the selected project path to the clipboard."
     );
 }
 

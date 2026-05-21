@@ -12,8 +12,11 @@ on developer machines, VMs, and VPS hosts.
    and hidden directories are skipped.
 4. Projects are grouped by their parent folder into lettered sectors.
 5. The interactive UI is written to stderr.
-6. The selected path is the only stdout output.
-7. The shell wrapper captures stdout and runs `cd` in the caller shell.
+6. Jump mode writes the selected path as the only stdout output.
+7. Copy mode writes no stdout and sends the selected path to the system
+   clipboard with an available platform clipboard command.
+8. The shell wrapper captures stdout and runs `cd` in the caller shell when jump
+   mode returns a path.
 
 The binary never changes directory itself because child processes cannot change
 the parent shell's working directory.
@@ -21,7 +24,8 @@ the parent shell's working directory.
 ## Boundaries
 
 - The CLI reads local directory metadata only.
-- The CLI does not write local state, config, logs, or telemetry.
+- The CLI does not write local state, config, logs, or telemetry, except when
+  `--copy-path` explicitly writes the selected path to the system clipboard.
 - Network access is limited to the optional installer and GitHub release flow.
 - Installation writes one binary to `~/.x-cli-jumper/jumper` and may update
   bash/zsh profile files with an idempotent marked block.
