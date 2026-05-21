@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-21
+
 ### Added
 
 - Added direct target selection with `jumper <target>` and shell wrapper support
