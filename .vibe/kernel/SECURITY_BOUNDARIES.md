@@ -9,6 +9,7 @@
 - Manifest, environment, deployment, and auth configuration are child project truth.
 - For web apps, name environment variables as `SERVICE__SETTING_NAME`: use a double underscore between the service/integration namespace and the setting purpose, and single underscores within the setting purpose.
 - Keep env var naming consistent within a service. Do not mix styles such as `GOOGLE_CLIENT_ID` and `GOOGLE__CLIENT_ID` for the same service.
+- For CLI apps installed from private GitHub repos, store update tokens only under `~/.x-cli-<project-name>/gh-token` with mode `0600`; never commit them, put them in shell profiles, or print them in logs/errors.
 
 ## Parent vs child
 

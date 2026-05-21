@@ -14,6 +14,10 @@ For Rust/Cargo projects, use `.vibe/kernel/examples/RUST_PROJECTS.md` for the sh
 
 For projects that generate `dist/`, use `.vibe/kernel/examples/DIST_ARTIFACTS.md` for the shared distribution artifact directory convention while keeping project-specific build flags local.
 
+For GitHub Release CI/CD, use `.vibe/kernel/examples/GITHUB_RELEASES.md`.
+
+For CLI app install/update/version/runtime layout, use `.vibe/kernel/examples/CLI_APPS.md`.
+
 ## Recommended targets
 
 Keep the Makefile command surface stable and predictable across child projects.
@@ -30,10 +34,10 @@ Canonical target set (keep the same names, semantics, and *rough* order; omit on
 8. `make test` — tests if real tests exist
 9. `make check` — main verification command (the “verify this repo” entrypoint)
 10. `make run` — local run
-11. `make release` — prepare a release if release flow exists
+11. `make release` — prepare a release
 12. `make release-tag` — create only the release tag if a manual escape hatch is useful
 13. `make release-push` — push the release commit and tags
-14. `make release-publish` — publish/deploy non-git artifacts only if the project needs it
+14. `make release-publish` — build/publish release artifacts for CI/CD or perform a documented publish handoff
 15. `make vibe-kernel-path` — print the current kernel source path (`.vibe/KERNEL_SOURCE`)
 16. `make vibe-kernel-set` — set/update `.vibe/KERNEL_SOURCE` (interactive prompt, or pass `KERNEL=/abs/path/to/vibecoding-kernel`)
 17. `make vibe-pull` — refresh `.vibe/kernel/*.md` from the parent kernel
@@ -43,9 +47,9 @@ Canonical target set (keep the same names, semantics, and *rough* order; omit on
 - Do not create fake passing targets.
 - Treat `Makefile` as the repo’s **service command surface**: routine actions (install, lint, fmt, test, build, run, dependency updates) should be runnable via `make ...`.
 - Prefer invoking `make <target>` in docs/instructions instead of raw tool commands (`npm`, `uv`, `cargo`, etc.). Make wraps the native tooling for the current repo.
-- Do not force release targets on projects that do not release.
+- Do not create fake release targets. A project is not fully standardized until GitHub Release CI/CD is implemented.
 - Do not perform version bumps, tags, publishing, or deployments without explicit user approval.
-- When release targets exist, use the Makefile release interface (`make release`, then `make release-push` or a project-specific publish command) instead of ad-hoc commands.
+- Use the Makefile release interface (`make release`, then `make release-push`; CI/CD publishes the GitHub Release) instead of ad-hoc commands.
 - `make check` should be the stable “verify this repo” command.
 - Makefile should wrap native tools, not replace them.
 - Keep public commands plain. Ordinary use should not require flags, environment variables, or extra arguments.
@@ -62,14 +66,15 @@ Prefer one clean Makefile as the repo service panel:
 
 ## Release command contract
 
-For projects that release, the normal release interface is exact and flagless:
+The normal release interface is exact and flagless:
 
 - `make release` prompts for the target `MAJOR.MINOR.PATCH` version.
 - The entered version is the source of truth. Do not calculate patch/minor/major versions for the normal path.
 - `make release` validates the version, refuses an existing `vMAJOR.MINOR.PATCH` tag, updates native version files and lock/release metadata, updates `CHANGELOG.md` if the repo uses one, creates a dedicated release commit, and creates an annotated tag.
 - `make release` does not deploy by itself.
 - `make release-push` pushes `main` and tags, normally `git push origin main --follow-tags`.
-- `make release-publish` is optional and means project-specific artifact publishing or deploy handoff after the release tag exists.
+- GitHub Release CI/CD publishes the release from the pushed tag.
+- `make release-publish` is the CI/CD-facing artifact build/publish target or a documented manual publish handoff when the project needs one.
 - Lower-level targets such as `release-tag` may exist as implementation pieces or manual escape hatches, but docs and agents should present `make release` as the normal command.
 
 ## Git hook gates (optional)

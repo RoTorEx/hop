@@ -44,7 +44,9 @@ Default tag format:
 vX.Y.Z
 ```
 
-Use release/changelog flow only when the project actually releases.
+All child projects must implement a CI/CD mechanism that publishes releases to GitHub Releases.
+
+Release CI/CD is project-owned and should follow `.vibe/kernel/examples/GITHUB_RELEASES.md`.
 
 Recommended flow (language-agnostic; Makefile wraps native tooling):
 
@@ -55,12 +57,14 @@ Recommended flow (language-agnostic; Makefile wraps native tooling):
 4. `make release` should validate and apply the exact version, update native version files, update lock/release metadata when required, move `CHANGELOG.md` Unreleased entries when present, create a dedicated release commit, and create an annotated `vX.Y.Z` tag.
 5. Push the release commit and tag:
    - `make release-push`
-6. Publish/deploy only if the project actually has a separate publish/deploy handoff:
+6. CI/CD publishes the GitHub Release from the pushed tag.
+7. Publish/deploy non-GitHub artifacts only if the project has a separate publish/deploy handoff:
    - `make release-publish`
 
 Notes:
 - Ask for explicit user approval before any version bump, tagging, or publishing.
 - Do not use patch/minor/major calculations, flags, or environment variables as the normal human release interface.
+- Do not publish GitHub Releases from a developer machine as the normal path; local commands prepare and trigger CI/CD.
 - The release command may have lower-level helpers, but the public path should be plain: `make release`, then `make release-push`.
 - Never use destructive Git overrides: no `git push --force*`, no `git reset --hard`.
 

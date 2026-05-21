@@ -28,6 +28,8 @@ Keep `AGENTS.md` a **router**, not an encyclopedia.
 - Task queue task: `TASK.md` (if present).
 - Docs task: exact docs being changed.
 - Release/version task: `Makefile`, `CHANGELOG.md` (if present), `docs/release.md` (if present), native package config, release notes, `.vibe/kernel/COMMAND_INTERFACE.md`, `.vibe/kernel/CHANGE_CONVENTIONS.md`.
+- GitHub release CI/CD task: `.vibe/kernel/examples/GITHUB_RELEASES.md`, `.github/workflows/*`, `Makefile`, native package config, and release docs.
+- CLI app install/update task: `.vibe/kernel/examples/CLI_APPS.md`, `.vibe/kernel/examples/GITHUB_RELEASES.md`, `README.md`, `Makefile`, installer/update code, and `.vibe/kernel/SECURITY_BOUNDARIES.md` when private tokens are involved.
 - Distribution artifact task: `.vibe/kernel/examples/DIST_ARTIFACTS.md`, `Makefile`, native package/build config, and relevant build scripts.
 - Rust/Cargo task: `.vibe/kernel/examples/RUST_PROJECTS.md`, `Makefile`, `Cargo.toml`, `Cargo.lock` (if present), and relevant Rust source/tests.
 - Logging/diagnostics task: `docs/logging.md` (if present), plus relevant source/config.
