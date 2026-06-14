@@ -13,6 +13,8 @@ Tracks real product and release progress.
 ### Changed
 
 - Config projects are now written in alphanumeric path order.
+- Normal jump mode now requires `~/.x-cli-jumper/config.toml` instead of
+  falling back to a full `$HOME` scan.
 
 ## [0.1.5] - 2026-05-22
 

@@ -99,6 +99,9 @@ project from normal `jumper` and `j` results. Pass `--root <dir>` to refresh
 from a different scan root. Passing `--root` to normal jump mode still performs
 an ad hoc scan instead of using the config.
 
+Normal `jumper` and `j` jump mode require the config file. If it is missing,
+jumper prints an alert and exits; run `jumper config` first.
+
 `jumper update` replaces the current executable with the latest Linux binary for
 the current CPU architecture from GitHub Releases. It requires `curl` or `wget`,
 plus `tar`. If `~/.x-cli-jumper/gh-token` exists, updates use that token for

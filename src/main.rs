@@ -262,9 +262,10 @@ fn projects_for_jump(
         return Ok((home, active_project_paths(&config), Some(path)));
     }
 
-    let projects = discover_projects(&home)
-        .map_err(|error| format!("Cannot scan {}: {error}", home.display()))?;
-    Ok((home, projects, None))
+    Err(format!(
+        "Project config not found at {}; run `jumper config` first.",
+        path.display()
+    ))
 }
 
 fn load_optional_project_config(path: &Path) -> Result<Option<ProjectConfig>, String> {

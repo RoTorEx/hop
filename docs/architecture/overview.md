@@ -5,11 +5,11 @@ on developer machines, VMs, and VPS hosts.
 
 ## Runtime Flow
 
-1. The binary uses `~/.x-cli-jumper/config.toml` when it exists and no ad hoc
-   `--root` scan is requested.
-2. Without a config file, or when `--root <dir>` is passed to jump mode, the
-   binary scans a root directory (`$HOME` by default).
-3. A directory below the scan root is treated as a project when it contains
+1. Normal jump mode requires `~/.x-cli-jumper/config.toml`; when it is missing,
+   the binary fails with an alert to run `jumper config`.
+2. Passing `--root <dir>` to jump mode performs an explicit ad hoc scan instead
+   of using the config.
+3. A directory below a scan root is treated as a project when it contains
    `.git`.
 4. Known noisy directories such as `node_modules`, `target`, virtualenvs, caches,
    and hidden directories are skipped.
