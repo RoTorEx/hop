@@ -16,9 +16,11 @@ on developer machines, VMs, and VPS hosts.
 5. Projects are grouped by their parent folder into lettered sectors.
 6. The interactive UI is written to stderr.
 7. Jump mode writes the selected path as the only stdout output.
-8. Copy mode writes no stdout and sends the selected path to the system
+8. The `~` target is a shortcut for the jumper home directory,
+   `~/.x-cli-jumper`.
+9. Copy mode writes no stdout and sends the selected path to the system
    clipboard with an available platform clipboard command.
-9. The shell wrapper captures stdout and runs `cd` in the caller shell when jump
+10. The shell wrapper captures stdout and runs `cd` in the caller shell when jump
    mode returns a path.
 
 `jumper config` refreshes the config file by scanning `$HOME` or an explicit

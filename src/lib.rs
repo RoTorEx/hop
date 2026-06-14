@@ -97,8 +97,13 @@ pub fn discover_projects(root: &Path) -> io::Result<Vec<PathBuf>> {
 }
 
 #[must_use]
+pub fn cli_home_path(home: &Path) -> PathBuf {
+    home.join(CONFIG_DIR_NAME)
+}
+
+#[must_use]
 pub fn config_path(home: &Path) -> PathBuf {
-    home.join(CONFIG_DIR_NAME).join(CONFIG_FILE_NAME)
+    cli_home_path(home).join(CONFIG_FILE_NAME)
 }
 
 pub fn load_project_config(path: &Path) -> io::Result<ProjectConfig> {

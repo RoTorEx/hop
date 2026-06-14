@@ -64,6 +64,7 @@ Open a new shell or source your profile, then run:
 
 ```bash
 j
+j ~
 j A1
 j --copy-path A1
 ```
@@ -72,6 +73,7 @@ j --copy-path A1
 
 ```bash
 jumper --help
+jumper ~
 jumper config
 jumper -v
 jumper A1
@@ -85,6 +87,9 @@ Interactive UI, help, and version output are written to stderr. Jump mode prints
 the selected path as the only stdout output, which keeps shell integration safe
 and predictable. Copy mode writes no stdout and copies the selected path with
 `pbcopy`, `wl-copy`, `xclip`, or `xsel`.
+
+`jumper ~` prints the jumper home directory, `~/.x-cli-jumper`, so the shell
+wrapper form `j ~` jumps there directly.
 
 `jumper config` scans `$HOME` and creates or updates
 `~/.x-cli-jumper/config.toml`. Existing `active = true` or `active = false`

@@ -8,6 +8,7 @@ Tracks real product and release progress.
 
 - Added `jumper config` to maintain `~/.x-cli-jumper/config.toml` and let users
   hide projects by editing `active = false`.
+- Added `jumper ~` as a shortcut to the jumper home directory.
 
 ## [0.1.5] - 2026-05-22
 

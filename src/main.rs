@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
 use jumper::{
-    APP_NAME, ChoiceParseError, ProjectConfig, Sector, active_project_paths, config_path,
-    discover_projects, group_projects, load_project_config, merge_project_config, parse_choice,
-    write_project_config,
+    APP_NAME, ChoiceParseError, ProjectConfig, Sector, active_project_paths, cli_home_path,
+    config_path, discover_projects, group_projects, load_project_config, merge_project_config,
+    parse_choice, write_project_config,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -152,6 +152,14 @@ fn run_update(color: bool) -> ExitCode {
 }
 
 fn run_jump(options: Options) -> ExitCode {
+    if let Some(target) = options.target.as_deref() {
+        match cli_home_shortcut_path(target) {
+            Ok(Some(path)) => return emit_path(&path, options.copy_path, options.color),
+            Ok(None) => {}
+            Err(message) => return fail(&message, options.color),
+        }
+    }
+
     let (root, projects, config_source) = match projects_for_jump(&options) {
         Ok(projects) => projects,
         Err(message) => return fail(&message, options.color),
@@ -271,6 +279,26 @@ fn home_dir() -> Result<PathBuf, String> {
     env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or_else(|| "HOME is not set; pass --root <dir>".to_owned())
+}
+
+fn cli_home_shortcut_path(target: &str) -> Result<Option<PathBuf>, String> {
+    if target == "~" {
+        return home_dir().map(|home| Some(cli_home_path(&home)));
+    }
+
+    let Some(home) = env::var_os("HOME").map(PathBuf::from) else {
+        return Ok(None);
+    };
+
+    Ok(cli_home_shortcut_path_for_home(target, &home))
+}
+
+fn cli_home_shortcut_path_for_home(target: &str, home: &Path) -> Option<PathBuf> {
+    if target == "~" || Path::new(target) == home {
+        Some(cli_home_path(home))
+    } else {
+        None
+    }
 }
 
 fn prompt_loop(sectors: &[Sector], copy_path: bool, color: bool) -> ExitCode {
@@ -718,6 +746,7 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 
 {}:
     jumper [<target>] [--copy-path] [--root <dir>] [--no-color]
+    jumper ~
     jumper config [--root <dir>]
     jumper update
     jumper --shell-init
@@ -736,8 +765,9 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
     -h, --help        Print help
 
 The interactive UI writes to stderr. Jump mode prints only the selected project
-path to stdout, so a shell wrapper can safely cd into it. Copy mode writes no
-stdout and copies the selected project path to the clipboard.",
+path to stdout, so a shell wrapper can safely cd into it. Target ~ prints the
+jumper home directory. Copy mode writes no stdout and copies the selected
+project path to the clipboard.",
         paint(color, BOLD, &title_case(APP_NAME)),
         paint(color, DIM, &format!("v{VERSION}")),
         paint(color, BLUE, "USAGE"),
@@ -766,4 +796,24 @@ j() {{
     d="$(jumper "$@")" && [ -n "$d" ] && cd "$d"
 }}"#
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cli_home_shortcut_accepts_literal_and_shell_expanded_home() {
+        let home = PathBuf::from("/home/alex");
+
+        assert_eq!(
+            cli_home_shortcut_path_for_home("~", &home),
+            Some(PathBuf::from("/home/alex/.x-cli-jumper"))
+        );
+        assert_eq!(
+            cli_home_shortcut_path_for_home("/home/alex", &home),
+            Some(PathBuf::from("/home/alex/.x-cli-jumper"))
+        );
+        assert_eq!(cli_home_shortcut_path_for_home("A1", &home), None);
+    }
 }
