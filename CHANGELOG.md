@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-14
+
 ### Added
 
 - Added `jumper config` to maintain `~/.x-cli-jumper/config.toml` and let users
