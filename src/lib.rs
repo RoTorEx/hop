@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
@@ -139,10 +140,12 @@ pub fn merge_project_config(
 
     ProjectConfig {
         version: CONFIG_VERSION,
-        projects: projects
-            .into_iter()
-            .map(|(path, active)| ProjectConfigEntry { path, active })
-            .collect(),
+        projects: sort_project_config_entries(
+            projects
+                .into_iter()
+                .map(|(path, active)| ProjectConfigEntry { path, active })
+                .collect(),
+        ),
     }
 }
 
@@ -218,7 +221,8 @@ pub fn render_project_config(config: &ProjectConfig) -> String {
         "# jumper project config\n# Set active = false to hide a project.\n\nversion = 1\n",
     );
 
-    for project in &config.projects {
+    let projects = sorted_project_config_entries(&config.projects);
+    for project in projects {
         output.push_str("\n[[projects]]\npath = \"");
         push_toml_string(&mut output, &project.path.display().to_string());
         output.push_str("\"\nactive = ");
@@ -328,6 +332,93 @@ fn index_for_label(label: &str) -> Option<usize> {
     }
 
     value.checked_sub(1)
+}
+
+fn sort_project_config_entries(mut projects: Vec<ProjectConfigEntry>) -> Vec<ProjectConfigEntry> {
+    projects.sort_by(|left, right| compare_paths_alphanumeric(&left.path, &right.path));
+    projects
+}
+
+fn sorted_project_config_entries(projects: &[ProjectConfigEntry]) -> Vec<&ProjectConfigEntry> {
+    let mut projects = projects.iter().collect::<Vec<_>>();
+    projects.sort_by(|left, right| compare_paths_alphanumeric(&left.path, &right.path));
+    projects
+}
+
+fn compare_paths_alphanumeric(left: &Path, right: &Path) -> Ordering {
+    compare_alphanumeric(&left.display().to_string(), &right.display().to_string())
+}
+
+fn compare_alphanumeric(left: &str, right: &str) -> Ordering {
+    let mut left_chars = left.char_indices().peekable();
+    let mut right_chars = right.char_indices().peekable();
+
+    while let (Some(&(_, left_ch)), Some(&(_, right_ch))) = (left_chars.peek(), right_chars.peek())
+    {
+        let ordering = if left_ch.is_ascii_digit() && right_ch.is_ascii_digit() {
+            compare_digit_runs(&mut left_chars, &mut right_chars)
+        } else {
+            compare_text_chars(left_ch, right_ch)
+        };
+
+        if ordering != Ordering::Equal {
+            return ordering;
+        }
+
+        if !left_ch.is_ascii_digit() || !right_ch.is_ascii_digit() {
+            left_chars.next();
+            right_chars.next();
+        }
+    }
+
+    left_chars
+        .peek()
+        .is_some()
+        .cmp(&right_chars.peek().is_some())
+}
+
+fn compare_digit_runs(
+    left_chars: &mut std::iter::Peekable<std::str::CharIndices<'_>>,
+    right_chars: &mut std::iter::Peekable<std::str::CharIndices<'_>>,
+) -> Ordering {
+    let left_run = take_digit_run(left_chars);
+    let right_run = take_digit_run(right_chars);
+    let left_significant = left_run.trim_start_matches('0');
+    let right_significant = right_run.trim_start_matches('0');
+    let left_significant = if left_significant.is_empty() {
+        "0"
+    } else {
+        left_significant
+    };
+    let right_significant = if right_significant.is_empty() {
+        "0"
+    } else {
+        right_significant
+    };
+
+    left_significant
+        .len()
+        .cmp(&right_significant.len())
+        .then_with(|| left_significant.cmp(right_significant))
+        .then_with(|| left_run.len().cmp(&right_run.len()))
+}
+
+fn take_digit_run(chars: &mut std::iter::Peekable<std::str::CharIndices<'_>>) -> String {
+    let mut run = String::new();
+    while let Some(&(_, ch)) = chars.peek() {
+        if !ch.is_ascii_digit() {
+            break;
+        }
+        run.push(ch);
+        chars.next();
+    }
+    run
+}
+
+fn compare_text_chars(left: char, right: char) -> Ordering {
+    left.to_ascii_lowercase()
+        .cmp(&right.to_ascii_lowercase())
+        .then_with(|| left.cmp(&right))
 }
 
 #[derive(Default)]
@@ -671,6 +762,67 @@ active = true # trailing comments are fine
                 },
             ]
         );
+    }
+
+    #[test]
+    fn merging_project_config_sorts_projects_alphanumerically() {
+        let existing = ProjectConfig {
+            version: 1,
+            projects: vec![ProjectConfigEntry {
+                path: PathBuf::from("/home/alex/work/project-10"),
+                active: false,
+            }],
+        };
+        let discovered = vec![
+            PathBuf::from("/home/alex/work/project-2"),
+            PathBuf::from("/home/alex/work/project-1"),
+            PathBuf::from("/home/alex/work/project-10"),
+        ];
+
+        let merged = merge_project_config(Some(existing), discovered);
+
+        assert_eq!(
+            merged
+                .projects
+                .iter()
+                .map(|project| project.path.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                PathBuf::from("/home/alex/work/project-1"),
+                PathBuf::from("/home/alex/work/project-2"),
+                PathBuf::from("/home/alex/work/project-10"),
+            ]
+        );
+        assert!(!merged.projects[2].active);
+    }
+
+    #[test]
+    fn render_project_config_sorts_projects_alphanumerically() {
+        let config = ProjectConfig {
+            version: 1,
+            projects: vec![
+                ProjectConfigEntry {
+                    path: PathBuf::from("/home/alex/work/project-10"),
+                    active: true,
+                },
+                ProjectConfigEntry {
+                    path: PathBuf::from("/home/alex/work/project-2"),
+                    active: true,
+                },
+                ProjectConfigEntry {
+                    path: PathBuf::from("/home/alex/work/project-1"),
+                    active: true,
+                },
+            ],
+        };
+
+        let rendered = render_project_config(&config);
+        let project_1 = rendered.find("project-1").expect("project-1 rendered");
+        let project_2 = rendered.find("project-2").expect("project-2 rendered");
+        let project_10 = rendered.find("project-10").expect("project-10 rendered");
+
+        assert!(project_1 < project_2);
+        assert!(project_2 < project_10);
     }
 
     #[test]

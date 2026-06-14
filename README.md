@@ -94,9 +94,10 @@ wrapper form `j ~` jumps there directly.
 `jumper config` scans `$HOME` and creates or updates
 `~/.x-cli-jumper/config.toml`. Existing `active = true` or `active = false`
 values are preserved, and newly discovered projects default to `active = true`.
-Edit `active = false` to hide a project from normal `jumper` and `j` results.
-Pass `--root <dir>` to refresh from a different scan root. Passing `--root` to
-normal jump mode still performs an ad hoc scan instead of using the config.
+Projects are written in alphanumeric path order. Edit `active = false` to hide a
+project from normal `jumper` and `j` results. Pass `--root <dir>` to refresh
+from a different scan root. Passing `--root` to normal jump mode still performs
+an ad hoc scan instead of using the config.
 
 `jumper update` replaces the current executable with the latest Linux binary for
 the current CPU architecture from GitHub Releases. It requires `curl` or `wget`,
