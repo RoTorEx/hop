@@ -31,7 +31,7 @@ Common types:
 If the repo uses `CHANGELOG.md`:
 
 - Keep new notable changes under `## [Unreleased]` as they land.
-- On a release bump, move the Unreleased entries under a new version header like:
+- On a release, move the Unreleased entries under a new version header like:
   - `## [X.Y.Z] - YYYY-MM-DD`
   leaving `## [Unreleased]` empty for new work.
 - Update the changelog deterministically (no speculation; only what actually shipped).
@@ -44,26 +44,29 @@ Default tag format:
 vX.Y.Z
 ```
 
-Use release/changelog flow only when the project actually releases.
+All child projects must implement a CI/CD mechanism that publishes releases to GitHub Releases.
+
+Release CI/CD is project-owned and should follow `.vibe/kernel/examples/GITHUB_RELEASES.md`.
 
 Recommended flow (language-agnostic; Makefile wraps native tooling):
 
 1. Commit all normal work first (clean working tree).
-2. Run the repo release bump command (must update version + changelog/release notes deterministically):
-   - `make release-bump` (defaults to `patch` unless user explicitly requests `minor`/`major`)
-3. Commit the bump as a dedicated release commit (keep it separate from feature work):
-   - `build: bump version to vX.Y.Z` (or equivalent)
-4. Tag the release commit:
-   - `make release-tag` (creates `vX.Y.Z`)
+2. Ask for explicit release approval. If the user has not already provided the target version, `make release` prompts for the exact `MAJOR.MINOR.PATCH` version.
+3. Run the repo release command:
+   - `make release`
+4. `make release` should validate and apply the exact version, update native version files, update lock/release metadata when required, move `CHANGELOG.md` Unreleased entries when present, create a dedicated release commit, and create an annotated `vX.Y.Z` tag.
 5. Push the release commit and tag:
-   - `git push origin main --follow-tags`
-6. Publish/deploy only if the project actually publishes:
+   - `make release-push`
+6. CI/CD publishes the GitHub Release from the pushed tag.
+7. Publish/deploy non-GitHub artifacts only if the project has a separate publish/deploy handoff:
    - `make release-publish`
 
 Notes:
 - Ask for explicit user approval before any version bump, tagging, or publishing.
+- Do not use patch/minor/major calculations, flags, or environment variables as the normal human release interface.
+- Do not publish GitHub Releases from a developer machine as the normal path; local commands prepare and trigger CI/CD.
+- The release command may have lower-level helpers, but the public path should be plain: `make release`, then `make release-push`.
 - Never use destructive Git overrides: no `git push --force*`, no `git reset --hard`.
-- If the repo supports `patch`/`minor`/`major`, treat `minor`/`major` approvals as one-shot; subsequent releases default back to `patch` unless requested again.
 
 ## Reports
 

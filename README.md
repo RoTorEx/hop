@@ -23,6 +23,13 @@ Install from GitHub on a VM/VPS:
 curl -fsSL https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install.sh | sh
 ```
 
+If the source repository requires GitHub authentication, pass the installer
+token as `GH_INSTALLER_TOKEN`:
+
+```bash
+GH_INSTALLER_TOKEN="$(gh auth token)" sh -c 'curl -fsSL -H "Authorization: Bearer $GH_INSTALLER_TOKEN" https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install.sh | GH_INSTALLER_TOKEN="$GH_INSTALLER_TOKEN" sh'
+```
+
 Pin a release or branch:
 
 ```bash
@@ -30,7 +37,9 @@ curl -fsSL https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install
 ```
 
 The installer builds with Cargo, copies the binary to
-`~/.x-cli-jumper/jumper`, and adds this integration to bash/zsh profile files:
+`~/.x-cli-jumper/jumper`, stores a supplied private repo update token at
+`~/.x-cli-jumper/gh-token` with file mode `0600`, and adds this integration to
+bash/zsh profile files:
 
 ```bash
 export PATH="$HOME/.x-cli-jumper:$PATH"
@@ -39,7 +48,7 @@ j() {
     local arg
     for arg in "$@"; do
         case "$arg" in
-            -h|--help|-V|--version|--shell-init|config|update)
+            -h|--help|-v|-V|--version|--shell-init|config|update)
                 jumper "$@"
                 return
                 ;;
@@ -64,6 +73,7 @@ j --copy-path A1
 ```bash
 jumper --help
 jumper config
+jumper -v
 jumper A1
 jumper --copy-path A1
 jumper update
@@ -71,10 +81,10 @@ jumper --root /srv
 jumper --shell-init
 ```
 
-All interactive UI is written to stderr. Jump mode prints the selected path as
-the only stdout output, which keeps shell integration safe and predictable.
-Copy mode writes no stdout and copies the selected path with `pbcopy`,
-`wl-copy`, `xclip`, or `xsel`.
+Interactive UI, help, and version output are written to stderr. Jump mode prints
+the selected path as the only stdout output, which keeps shell integration safe
+and predictable. Copy mode writes no stdout and copies the selected path with
+`pbcopy`, `wl-copy`, `xclip`, or `xsel`.
 
 `jumper config` scans `$HOME` and creates or updates
 `~/.x-cli-jumper/config.toml`. Existing `active = true` or `active = false`
@@ -85,7 +95,8 @@ normal jump mode still performs an ad hoc scan instead of using the config.
 
 `jumper update` replaces the current executable with the latest Linux binary for
 the current CPU architecture from GitHub Releases. It requires `curl` or `wget`,
-plus `tar`.
+plus `tar`. If `~/.x-cli-jumper/gh-token` exists, updates use that token for
+GitHub authentication.
 
 ## Release Flow
 
@@ -100,21 +111,12 @@ One-command guarded release:
 
 ```bash
 make release
+make release-push
 ```
 
-That command runs checks, finalizes the current version when it has no tag yet,
-or bumps the patch version for later releases, creates a dedicated release
-commit, creates a `vX.Y.Z` tag, and pushes `main` with tags.
-
-Prepare the same flow manually:
-
-```bash
-make release-bump
-git add Cargo.toml Cargo.lock CHANGELOG.md
-git commit -m "build: bump version to vX.Y.Z"
-make release-tag
-make release-publish
-```
+`make release` prompts for the exact `MAJOR.MINOR.PATCH` version, runs checks,
+updates release metadata, creates a dedicated release commit, and creates a
+`vX.Y.Z` tag. `make release-push` pushes `main` and tags.
 
 Pushing a `vX.Y.Z` tag triggers the GitHub Actions workflow that builds and
 attaches Linux x86_64 and aarch64 release binaries.

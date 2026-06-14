@@ -9,6 +9,26 @@ Tracks real product and release progress.
 - Added `jumper config` to maintain `~/.x-cli-jumper/config.toml` and let users
   hide projects by editing `active = false`.
 
+## [0.1.5] - 2026-05-22
+
+### Added
+
+- Added `GH_INSTALLER_TOKEN` support for authenticated installs and token-backed
+  `jumper update` downloads.
+
+## [0.1.4] - 2026-05-21
+
+### Changed
+
+- Standardized the Makefile release flow and Cargo build artifact path against
+  the refreshed Vibecoding Kernel rules.
+- Moved help and version output to stderr so stale shell wrappers cannot treat
+  that text as a jump path.
+
+### Added
+
+- Added `-v` as a version alias.
+
 ## [0.1.3] - 2026-05-21
 
 ### Added

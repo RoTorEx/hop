@@ -39,5 +39,9 @@ the parent shell's working directory.
   explicit `jumper update` command.
 - Installation writes one binary to `~/.x-cli-jumper/jumper` and may update
   bash/zsh profile files with an idempotent marked block.
+- For authenticated GitHub installs, the installer reads `GH_INSTALLER_TOKEN`
+  and stores it at `~/.x-cli-jumper/gh-token` with mode `0600` for later
+  updates.
 - `jumper update` downloads the latest matching Linux release archive from
-  GitHub Releases and replaces the current executable.
+  GitHub Releases, using `~/.x-cli-jumper/gh-token` when present, and replaces
+  the current executable.
