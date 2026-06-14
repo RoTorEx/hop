@@ -4,7 +4,11 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
-use jumper::{APP_NAME, ChoiceParseError, Sector, discover_projects, group_projects, parse_choice};
+use jumper::{
+    APP_NAME, ChoiceParseError, ProjectConfig, Sector, active_project_paths, config_path,
+    discover_projects, group_projects, load_project_config, merge_project_config, parse_choice,
+    write_project_config,
+};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const RELEASE_BASE_URL: &str = "https://github.com/RoTorEx/jumper/releases/latest/download";
@@ -26,6 +30,7 @@ enum Command {
     Version,
     ShellInit,
     Update,
+    Config,
 }
 
 #[derive(Debug)]
@@ -57,6 +62,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Command::Update => run_update(options.color),
+        Command::Config => run_config(options),
         Command::Jump => run_jump(options),
     }
 }
@@ -139,25 +145,22 @@ fn run_update(color: bool) -> ExitCode {
 }
 
 fn run_jump(options: Options) -> ExitCode {
-    let root = match options.root {
-        Some(root) => root,
-        None => match env::var_os("HOME") {
-            Some(home) => PathBuf::from(home),
-            None => return fail("HOME is not set; pass --root <dir>", options.color),
-        },
-    };
-
-    let projects = match discover_projects(&root) {
+    let (root, projects, config_source) = match projects_for_jump(&options) {
         Ok(projects) => projects,
-        Err(error) => {
-            return fail(
-                &format!("Cannot scan {}: {error}", root.display()),
-                options.color,
-            );
-        }
+        Err(message) => return fail(&message, options.color),
     };
 
     if projects.is_empty() {
+        if let Some(config_source) = config_source {
+            return fail(
+                &format!(
+                    "No active projects found in {}; edit active values or run jumper config.",
+                    config_source.display()
+                ),
+                options.color,
+            );
+        }
+
         return fail("No git projects found under the scan root.", options.color);
     }
 
@@ -169,6 +172,98 @@ fn run_jump(options: Options) -> ExitCode {
 
     render(&sectors, options.color);
     prompt_loop(&sectors, options.copy_path, options.color)
+}
+
+fn run_config(options: Options) -> ExitCode {
+    let home = match home_dir() {
+        Ok(home) => home,
+        Err(message) => return fail(&message, options.color),
+    };
+    let root = options.root.unwrap_or_else(|| home.clone());
+    let path = config_path(&home);
+
+    let projects = match discover_projects(&root) {
+        Ok(projects) => projects,
+        Err(error) => {
+            return fail(
+                &format!("Cannot scan {}: {error}", root.display()),
+                options.color,
+            );
+        }
+    };
+
+    let existing = match load_optional_project_config(&path) {
+        Ok(existing) => existing,
+        Err(message) => return fail(&message, options.color),
+    };
+    let config = merge_project_config(existing, projects);
+    let total = config.projects.len();
+    let active = config
+        .projects
+        .iter()
+        .filter(|project| project.active)
+        .count();
+
+    if let Err(error) = write_project_config(&path, &config) {
+        return fail(
+            &format!("Cannot write {}: {error}", path.display()),
+            options.color,
+        );
+    }
+
+    eprintln!(
+        "{}",
+        paint(
+            options.color,
+            GREEN,
+            &format!("Updated {} ({active}/{total} active)", path.display()),
+        ),
+    );
+    eprintln!(
+        "{}",
+        paint(
+            options.color,
+            DIM,
+            "Edit active = false to hide projects from jumper.",
+        ),
+    );
+    ExitCode::SUCCESS
+}
+
+fn projects_for_jump(
+    options: &Options,
+) -> Result<(PathBuf, Vec<PathBuf>, Option<PathBuf>), String> {
+    if let Some(root) = &options.root {
+        let projects = discover_projects(root)
+            .map_err(|error| format!("Cannot scan {}: {error}", root.display()))?;
+        return Ok((root.clone(), projects, None));
+    }
+
+    let home = home_dir()?;
+    let path = config_path(&home);
+    if path.exists() {
+        let config = load_project_config(&path)
+            .map_err(|error| format!("Cannot read {}: {error}", path.display()))?;
+        return Ok((home, active_project_paths(&config), Some(path)));
+    }
+
+    let projects = discover_projects(&home)
+        .map_err(|error| format!("Cannot scan {}: {error}", home.display()))?;
+    Ok((home, projects, None))
+}
+
+fn load_optional_project_config(path: &Path) -> Result<Option<ProjectConfig>, String> {
+    match load_project_config(path) {
+        Ok(config) => Ok(Some(config)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("Cannot read {}: {error}", path.display())),
+    }
+}
+
+fn home_dir() -> Result<PathBuf, String> {
+    env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "HOME is not set; pass --root <dir>".to_owned())
 }
 
 fn prompt_loop(sectors: &[Sector], copy_path: bool, color: bool) -> ExitCode {
@@ -400,6 +495,12 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
                 root = Some(PathBuf::from(value));
             }
             _ if arg.starts_with('-') => return Err(format!("unknown argument: {arg}")),
+            "config" if target.is_none() => {
+                if command != Command::Jump {
+                    return Err(format!("unexpected argument: {arg}"));
+                }
+                command = Command::Config;
+            }
             "update" if target.is_none() => {
                 if command != Command::Jump {
                     return Err(format!("unexpected argument: {arg}"));
@@ -407,7 +508,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
                 command = Command::Update;
             }
             _ => {
-                if command == Command::Update {
+                if matches!(command, Command::Update | Command::Config) {
                     return Err(format!("unexpected argument: {arg}"));
                 }
                 if target.is_some() {
@@ -516,11 +617,13 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 
 USAGE:
     jumper [<target>] [--copy-path] [--root <dir>] [--no-color]
+    jumper config [--root <dir>]
     jumper update
     jumper --shell-init
     jumper --version
 
 COMMANDS:
+    config           Create or update the project config
     update           Update this executable from the latest GitHub release
 
 OPTIONS:
@@ -546,7 +649,7 @@ j() {{
     local arg
     for arg in "$@"; do
         case "$arg" in
-            -h|--help|-V|--version|--shell-init|update)
+            -h|--help|-V|--version|--shell-init|config|update)
                 jumper "$@"
                 return
                 ;;

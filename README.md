@@ -39,7 +39,7 @@ j() {
     local arg
     for arg in "$@"; do
         case "$arg" in
-            -h|--help|-V|--version|--shell-init|update)
+            -h|--help|-V|--version|--shell-init|config|update)
                 jumper "$@"
                 return
                 ;;
@@ -63,6 +63,7 @@ j --copy-path A1
 
 ```bash
 jumper --help
+jumper config
 jumper A1
 jumper --copy-path A1
 jumper update
@@ -74,6 +75,13 @@ All interactive UI is written to stderr. Jump mode prints the selected path as
 the only stdout output, which keeps shell integration safe and predictable.
 Copy mode writes no stdout and copies the selected path with `pbcopy`,
 `wl-copy`, `xclip`, or `xsel`.
+
+`jumper config` scans `$HOME` and creates or updates
+`~/.x-cli-jumper/config.toml`. Existing `active = true` or `active = false`
+values are preserved, and newly discovered projects default to `active = true`.
+Edit `active = false` to hide a project from normal `jumper` and `j` results.
+Pass `--root <dir>` to refresh from a different scan root. Passing `--root` to
+normal jump mode still performs an ad hoc scan instead of using the config.
 
 `jumper update` replaces the current executable with the latest Linux binary for
 the current CPU architecture from GitHub Releases. It requires `curl` or `wget`,

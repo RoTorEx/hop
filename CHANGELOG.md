@@ -4,6 +4,11 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Added
+
+- Added `jumper config` to maintain `~/.x-cli-jumper/config.toml` and let users
+  hide projects by editing `active = false`.
+
 ## [0.1.3] - 2026-05-21
 
 ### Added
