@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-17
+
 ### Fixed
 
 - Fixed generated shell integration so stale `jumper()` shell functions and
