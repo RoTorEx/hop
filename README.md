@@ -37,26 +37,35 @@ curl -fsSL https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install
 ```
 
 The installer builds with Cargo, copies the binary to
-`~/.x-cli-jumper/jumper`, stores a supplied private repo update token at
+`~/.x-cli-jumper/jumper`, refreshes `~/.x-cli-jumper/init.zsh` for legacy
+profile setups, stores a supplied private repo update token at
 `~/.x-cli-jumper/gh-token` with file mode `0600`, and adds this integration to
 bash/zsh profile files:
 
 ```bash
 export PATH="$HOME/.x-cli-jumper:$PATH"
 
-j() {
+unalias j 2>/dev/null || true
+unalias jumper 2>/dev/null || true
+if [ -n "${ZSH_VERSION:-}" ]; then
+    unfunction jumper 2>/dev/null || true
+else
+    unset -f jumper 2>/dev/null || true
+fi
+
+function j {
     local arg
     for arg in "$@"; do
         case "$arg" in
             -h|--help|-v|-V|--version|--shell-init|config|update)
-                jumper "$@"
+                command jumper "$@"
                 return
                 ;;
         esac
     done
 
     local d
-    d="$(jumper "$@")" && [ -n "$d" ] && cd "$d"
+    d="$(command jumper "$@")" && [ -n "$d" ] && cd "$d"
 }
 ```
 

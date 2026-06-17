@@ -4,6 +4,12 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed generated shell integration so stale `jumper()` shell functions and
+  `j` aliases from older installs no longer intercept `jumper config` or
+  wrapped `j` commands.
+
 ## [0.2.0] - 2026-06-14
 
 ### Added

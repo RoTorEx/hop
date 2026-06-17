@@ -143,6 +143,8 @@ echo "Building jumper"
 mkdir -p "$install_dir"
 cp "$source_dir/target/release/jumper" "$install_dir/jumper"
 chmod 0755 "$install_dir/jumper"
+"$install_dir/jumper" --shell-init > "$install_dir/init.zsh"
+chmod 0644 "$install_dir/init.zsh"
 if [ -n "$installer_token" ]; then
     token_file="$install_dir/gh-token"
     (umask 077 && printf "%s\n" "$installer_token" > "$token_file")

@@ -39,8 +39,9 @@ the parent shell's working directory.
   selected path to the system clipboard.
 - Network access is limited to the optional installer, GitHub release flow, and
   explicit `jumper update` command.
-- Installation writes one binary to `~/.x-cli-jumper/jumper` and may update
-  bash/zsh profile files with an idempotent marked block.
+- Installation writes one binary to `~/.x-cli-jumper/jumper`, refreshes the
+  compatibility init file at `~/.x-cli-jumper/init.zsh`, and may update bash/zsh
+  profile files with an idempotent marked block.
 - For authenticated GitHub installs, the installer reads `GH_INSTALLER_TOKEN`
   and stores it at `~/.x-cli-jumper/gh-token` with mode `0600` for later
   updates.

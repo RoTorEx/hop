@@ -778,25 +778,35 @@ project path to the clipboard.",
 }
 
 fn print_shell_init() {
-    println!(
-        r#"# x-cli-jumper
+    println!("{}", shell_init());
+}
+
+fn shell_init() -> &'static str {
+    r#"# x-cli-jumper
 export PATH="$HOME/.x-cli-jumper:$PATH"
 
-j() {{
+unalias j 2>/dev/null || true
+unalias jumper 2>/dev/null || true
+if [ -n "${ZSH_VERSION:-}" ]; then
+    unfunction jumper 2>/dev/null || true
+else
+    unset -f jumper 2>/dev/null || true
+fi
+
+function j {
     local arg
     for arg in "$@"; do
         case "$arg" in
             -h|--help|-v|-V|--version|--shell-init|config|update)
-                jumper "$@"
+                command jumper "$@"
                 return
                 ;;
         esac
     done
 
     local d
-    d="$(jumper "$@")" && [ -n "$d" ] && cd "$d"
-}}"#
-    );
+    d="$(command jumper "$@")" && [ -n "$d" ] && cd "$d"
+}"#
 }
 
 #[cfg(test)]
@@ -816,5 +826,18 @@ mod tests {
             Some(PathBuf::from("/home/alex/.x-cli-jumper"))
         );
         assert_eq!(cli_home_shortcut_path_for_home("A1", &home), None);
+    }
+
+    #[test]
+    fn shell_init_clears_legacy_wrapper_and_calls_binary() {
+        let init = shell_init();
+
+        assert!(init.contains("unalias j"));
+        assert!(init.contains("unalias jumper"));
+        assert!(init.contains("unfunction jumper"));
+        assert!(init.contains("unset -f jumper"));
+        assert!(init.contains("function j"));
+        assert!(init.contains("command jumper \"$@\""));
+        assert!(init.contains("d=\"$(command jumper \"$@\")\""));
     }
 }
