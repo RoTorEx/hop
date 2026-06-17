@@ -4,6 +4,10 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Added
+
+- Added macOS x86_64 and aarch64 release artifacts and `jumper update` support.
+
 ## [0.2.1] - 2026-06-17
 
 ### Fixed

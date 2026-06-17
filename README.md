@@ -111,10 +111,10 @@ an ad hoc scan instead of using the config.
 Normal `jumper` and `j` jump mode require the config file. If it is missing,
 jumper prints an alert and exits; run `jumper config` first.
 
-`jumper update` replaces the current executable with the latest Linux binary for
-the current CPU architecture from GitHub Releases. It requires `curl` or `wget`,
-plus `tar`. If `~/.x-cli-jumper/gh-token` exists, updates use that token for
-GitHub authentication.
+`jumper update` replaces the current executable with the latest Linux or macOS
+binary for the current CPU architecture from GitHub Releases. It requires `curl`
+or `wget`, plus `tar`. If `~/.x-cli-jumper/gh-token` exists, updates use that
+token for GitHub authentication.
 
 ## Release Flow
 
@@ -137,7 +137,7 @@ updates release metadata, creates a dedicated release commit, and creates a
 `vX.Y.Z` tag. `make release-push` pushes `main` and tags.
 
 Pushing a `vX.Y.Z` tag triggers the GitHub Actions workflow that builds and
-attaches Linux x86_64 and aarch64 release binaries.
+attaches Linux and macOS x86_64 and aarch64 release binaries.
 
 ## Kernel sync (sanity check)
 

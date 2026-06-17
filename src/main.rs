@@ -76,7 +76,7 @@ fn run_update(color: bool) -> ExitCode {
         Some(asset) => asset,
         None => {
             return fail(
-                "jumper update currently supports Linux release builds only.",
+                "jumper update currently supports Linux and macOS release builds only.",
                 color,
             );
         }
@@ -418,9 +418,15 @@ fn copy_to_clipboard(path: &std::path::Path, color: bool) -> ExitCode {
 }
 
 fn release_asset_name() -> Option<&'static str> {
-    match (env::consts::OS, env::consts::ARCH) {
+    release_asset_name_for(env::consts::OS, env::consts::ARCH)
+}
+
+fn release_asset_name_for(os: &str, arch: &str) -> Option<&'static str> {
+    match (os, arch) {
         ("linux", "x86_64") => Some("jumper-linux-x86_64.tar.gz"),
         ("linux", "aarch64") => Some("jumper-linux-aarch64.tar.gz"),
+        ("macos", "x86_64") => Some("jumper-macos-x86_64.tar.gz"),
+        ("macos", "aarch64") => Some("jumper-macos-aarch64.tar.gz"),
         _ => None,
     }
 }
@@ -839,5 +845,26 @@ mod tests {
         assert!(init.contains("function j"));
         assert!(init.contains("command jumper \"$@\""));
         assert!(init.contains("d=\"$(command jumper \"$@\")\""));
+    }
+
+    #[test]
+    fn release_asset_names_cover_supported_platforms() {
+        assert_eq!(
+            release_asset_name_for("linux", "x86_64"),
+            Some("jumper-linux-x86_64.tar.gz")
+        );
+        assert_eq!(
+            release_asset_name_for("linux", "aarch64"),
+            Some("jumper-linux-aarch64.tar.gz")
+        );
+        assert_eq!(
+            release_asset_name_for("macos", "x86_64"),
+            Some("jumper-macos-x86_64.tar.gz")
+        );
+        assert_eq!(
+            release_asset_name_for("macos", "aarch64"),
+            Some("jumper-macos-aarch64.tar.gz")
+        );
+        assert_eq!(release_asset_name_for("windows", "x86_64"), None);
     }
 }
