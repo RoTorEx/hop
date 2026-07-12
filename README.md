@@ -48,12 +48,14 @@ export PATH="$HOME/.x-cli-jumper:$PATH"
 unalias j 2>/dev/null || true
 unalias jumper 2>/dev/null || true
 if [ -n "${ZSH_VERSION:-}" ]; then
-    unfunction jumper 2>/dev/null || true
+    unfunction j jumper _jumper_dispatch 2>/dev/null || true
 else
+    unset -f j 2>/dev/null || true
     unset -f jumper 2>/dev/null || true
+    unset -f _jumper_dispatch 2>/dev/null || true
 fi
 
-function j {
+function _jumper_dispatch {
     local arg
     for arg in "$@"; do
         case "$arg" in
@@ -65,7 +67,23 @@ function j {
     done
 
     local d
-    d="$(command jumper "$@")" && [ -n "$d" ] && cd "$d"
+    local exit_status
+    d="$(command jumper "$@")"
+    exit_status=$?
+    if [ "$exit_status" -ne 0 ]; then
+        return "$exit_status"
+    fi
+    if [ -n "$d" ]; then
+        builtin cd -- "$d"
+    fi
+}
+
+function j {
+    _jumper_dispatch "$@"
+}
+
+function jumper {
+    _jumper_dispatch "$@"
 }
 ```
 
@@ -75,6 +93,7 @@ Open a new shell or source your profile, then run:
 j
 j ~
 j A1
+jumper b1
 j --copy-path A1
 ```
 
@@ -92,10 +111,12 @@ jumper --root /srv
 jumper --shell-init
 ```
 
-Interactive UI, help, and version output are written to stderr. Jump mode prints
-the selected path as the only stdout output, which keeps shell integration safe
-and predictable. Copy mode writes no stdout and copies the selected path with
-`pbcopy`, `wl-copy`, `xclip`, or `xsel`.
+Interactive UI, help, and version output are written to stderr. The installed
+shell integration makes both `j` and `jumper` change the current shell directory
+in jump mode; sector labels are case-insensitive, so `j B1` and `jumper b1` are
+equivalent. The underlying binary prints the selected path as its only stdout
+output, which keeps shell integration safe and predictable. Copy mode writes no
+stdout and copies the selected path with `pbcopy`, `wl-copy`, `xclip`, or `xsel`.
 
 `jumper ~` prints the jumper home directory, `~/.x-cli-jumper`, so the shell
 wrapper form `j ~` jumps there directly.

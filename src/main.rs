@@ -794,12 +794,14 @@ export PATH="$HOME/.x-cli-jumper:$PATH"
 unalias j 2>/dev/null || true
 unalias jumper 2>/dev/null || true
 if [ -n "${ZSH_VERSION:-}" ]; then
-    unfunction jumper 2>/dev/null || true
+    unfunction j jumper _jumper_dispatch 2>/dev/null || true
 else
+    unset -f j 2>/dev/null || true
     unset -f jumper 2>/dev/null || true
+    unset -f _jumper_dispatch 2>/dev/null || true
 fi
 
-function j {
+function _jumper_dispatch {
     local arg
     for arg in "$@"; do
         case "$arg" in
@@ -811,7 +813,23 @@ function j {
     done
 
     local d
-    d="$(command jumper "$@")" && [ -n "$d" ] && cd "$d"
+    local exit_status
+    d="$(command jumper "$@")"
+    exit_status=$?
+    if [ "$exit_status" -ne 0 ]; then
+        return "$exit_status"
+    fi
+    if [ -n "$d" ]; then
+        builtin cd -- "$d"
+    fi
+}
+
+function j {
+    _jumper_dispatch "$@"
+}
+
+function jumper {
+    _jumper_dispatch "$@"
 }"#
 }
 
@@ -835,16 +853,30 @@ mod tests {
     }
 
     #[test]
-    fn shell_init_clears_legacy_wrapper_and_calls_binary() {
+    fn shell_init_replaces_legacy_wrappers_and_calls_binary() {
         let init = shell_init();
 
         assert!(init.contains("unalias j"));
         assert!(init.contains("unalias jumper"));
-        assert!(init.contains("unfunction jumper"));
+        assert!(init.contains("unfunction j jumper _jumper_dispatch"));
+        assert!(init.contains("unset -f j"));
         assert!(init.contains("unset -f jumper"));
+        assert!(init.contains("unset -f _jumper_dispatch"));
+        assert!(init.contains("function _jumper_dispatch"));
         assert!(init.contains("function j"));
+        assert!(init.contains("function jumper"));
         assert!(init.contains("command jumper \"$@\""));
         assert!(init.contains("d=\"$(command jumper \"$@\")\""));
+        assert!(init.contains("builtin cd -- \"$d\""));
+        assert!(init.contains("return \"$exit_status\""));
+    }
+
+    #[test]
+    fn parse_args_accepts_lowercase_direct_target() {
+        let options = parse_args(["b1".to_owned()].into_iter()).expect("parse direct target");
+
+        assert_eq!(options.command, Command::Jump);
+        assert_eq!(options.target.as_deref(), Some("b1"));
     }
 
     #[test]

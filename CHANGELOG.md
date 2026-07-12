@@ -4,6 +4,13 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Fixed
+
+- Made both installed shell commands, `j` and `jumper`, change the current
+  directory in jump mode while preserving direct dispatch for CLI commands.
+- Preserved successful exit status for shell-wrapped modes that intentionally
+  produce no destination path.
+
 ## [0.2.2] - 2026-06-17
 
 ### Added

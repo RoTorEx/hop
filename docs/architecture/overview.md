@@ -20,15 +20,17 @@ on developer machines, VMs, and VPS hosts.
    `~/.x-cli-jumper`.
 9. Copy mode writes no stdout and sends the selected path to the system
    clipboard with an available platform clipboard command.
-10. The shell wrapper captures stdout and runs `cd` in the caller shell when jump
-   mode returns a path.
+10. The installed `j` and `jumper` shell wrappers capture stdout and run `cd` in
+    the caller shell when jump mode returns a path. Non-jump commands dispatch
+    directly to the binary.
 
 `jumper config` refreshes the config file by scanning `$HOME` or an explicit
 `--root <dir>`, merging newly discovered projects into the existing file, and
 preserving manually edited `active = true` or `active = false` values.
 
 The binary never changes directory itself because child processes cannot change
-the parent shell's working directory.
+the parent shell's working directory; the installed shell wrappers provide that
+behavior for both public command names.
 
 ## Boundaries
 
