@@ -4,6 +4,11 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Changed
+
+- Removed the `j` shorthand and made `jumper` the only installed shell command.
+  New shell integration removes legacy `j` aliases and functions.
+
 ## [0.2.3] - 2026-07-12
 
 ### Fixed

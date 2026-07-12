@@ -767,7 +767,7 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
     --copy-path      Copy the selected path instead of printing it
     --root <dir>      Scan a directory instead of $HOME
     --no-color        Disable ANSI color output
-    --shell-init      Print bash/zsh integration for the j command
+    --shell-init      Print bash/zsh integration for the jumper command
     -v, -V, --version Print version
     -h, --help        Print help
 
@@ -794,14 +794,14 @@ export PATH="$HOME/.x-cli-jumper:$PATH"
 unalias j 2>/dev/null || true
 unalias jumper 2>/dev/null || true
 if [ -n "${ZSH_VERSION:-}" ]; then
-    unfunction j jumper _jumper_dispatch 2>/dev/null || true
+    unfunction j 2>/dev/null || true
+    unfunction jumper 2>/dev/null || true
 else
     unset -f j 2>/dev/null || true
     unset -f jumper 2>/dev/null || true
-    unset -f _jumper_dispatch 2>/dev/null || true
 fi
 
-function _jumper_dispatch {
+function jumper {
     local arg
     for arg in "$@"; do
         case "$arg" in
@@ -822,14 +822,6 @@ function _jumper_dispatch {
     if [ -n "$d" ]; then
         builtin cd -- "$d"
     fi
-}
-
-function j {
-    _jumper_dispatch "$@"
-}
-
-function jumper {
-    _jumper_dispatch "$@"
 }"#
 }
 
@@ -853,18 +845,18 @@ mod tests {
     }
 
     #[test]
-    fn shell_init_replaces_legacy_wrappers_and_calls_binary() {
+    fn shell_init_removes_legacy_j_and_wraps_only_jumper() {
         let init = shell_init();
 
         assert!(init.contains("unalias j"));
         assert!(init.contains("unalias jumper"));
-        assert!(init.contains("unfunction j jumper _jumper_dispatch"));
+        assert!(init.contains("unfunction j"));
+        assert!(init.contains("unfunction jumper"));
         assert!(init.contains("unset -f j"));
         assert!(init.contains("unset -f jumper"));
-        assert!(init.contains("unset -f _jumper_dispatch"));
-        assert!(init.contains("function _jumper_dispatch"));
-        assert!(init.contains("function j"));
         assert!(init.contains("function jumper"));
+        assert!(!init.contains("\nfunction j {"));
+        assert!(!init.contains("_jumper_dispatch"));
         assert!(init.contains("command jumper \"$@\""));
         assert!(init.contains("d=\"$(command jumper \"$@\")\""));
         assert!(init.contains("builtin cd -- \"$d\""));

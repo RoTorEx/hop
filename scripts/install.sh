@@ -20,7 +20,8 @@ Environment:
   GH_INSTALLER_TOKEN   GitHub token for private repo installs
 
 The installer builds with Cargo, copies the jumper binary into the install
-directory, and updates bash/zsh profile files with the PATH and j() shell wrapper.
+directory, and updates bash/zsh profile files with the PATH and jumper() shell
+wrapper.
 USAGE
 }
 
@@ -198,4 +199,4 @@ if [ "$update_profile" -eq 1 ]; then
 fi
 
 echo "Installed $install_dir/jumper"
-echo "Open a new shell or source your profile, then run: j"
+echo "Open a new shell or source your profile, then run: jumper"

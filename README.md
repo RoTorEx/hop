@@ -48,14 +48,14 @@ export PATH="$HOME/.x-cli-jumper:$PATH"
 unalias j 2>/dev/null || true
 unalias jumper 2>/dev/null || true
 if [ -n "${ZSH_VERSION:-}" ]; then
-    unfunction j jumper _jumper_dispatch 2>/dev/null || true
+    unfunction j 2>/dev/null || true
+    unfunction jumper 2>/dev/null || true
 else
     unset -f j 2>/dev/null || true
     unset -f jumper 2>/dev/null || true
-    unset -f _jumper_dispatch 2>/dev/null || true
 fi
 
-function _jumper_dispatch {
+function jumper {
     local arg
     for arg in "$@"; do
         case "$arg" in
@@ -77,24 +77,16 @@ function _jumper_dispatch {
         builtin cd -- "$d"
     fi
 }
-
-function j {
-    _jumper_dispatch "$@"
-}
-
-function jumper {
-    _jumper_dispatch "$@"
-}
 ```
 
 Open a new shell or source your profile, then run:
 
 ```bash
-j
-j ~
-j A1
+jumper
+jumper ~
+jumper A1
 jumper b1
-j --copy-path A1
+jumper --copy-path A1
 ```
 
 ## Usage
@@ -112,25 +104,24 @@ jumper --shell-init
 ```
 
 Interactive UI, help, and version output are written to stderr. The installed
-shell integration makes both `j` and `jumper` change the current shell directory
-in jump mode; sector labels are case-insensitive, so `j B1` and `jumper b1` are
+shell integration makes `jumper` change the current shell directory in jump
+mode. Sector labels are case-insensitive, so `jumper B1` and `jumper b1` are
 equivalent. The underlying binary prints the selected path as its only stdout
 output, which keeps shell integration safe and predictable. Copy mode writes no
 stdout and copies the selected path with `pbcopy`, `wl-copy`, `xclip`, or `xsel`.
 
-`jumper ~` prints the jumper home directory, `~/.x-cli-jumper`, so the shell
-wrapper form `j ~` jumps there directly.
+`jumper ~` jumps directly to the jumper home directory, `~/.x-cli-jumper`.
 
 `jumper config` scans `$HOME` and creates or updates
 `~/.x-cli-jumper/config.toml`. Existing `active = true` or `active = false`
 values are preserved, and newly discovered projects default to `active = true`.
 Projects are written in alphanumeric path order. Edit `active = false` to hide a
-project from normal `jumper` and `j` results. Pass `--root <dir>` to refresh
+project from normal `jumper` results. Pass `--root <dir>` to refresh
 from a different scan root. Passing `--root` to normal jump mode still performs
 an ad hoc scan instead of using the config.
 
-Normal `jumper` and `j` jump mode require the config file. If it is missing,
-jumper prints an alert and exits; run `jumper config` first.
+Normal `jumper` jump mode requires the config file. If it is missing, jumper
+prints an alert and exits; run `jumper config` first.
 
 `jumper update` replaces the current executable with the latest Linux or macOS
 binary for the current CPU architecture from GitHub Releases. It requires `curl`
