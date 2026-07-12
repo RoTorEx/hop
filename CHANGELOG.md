@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-07-12
+
 ### Changed
 
 - Removed the `j` shorthand and made `jumper` the only installed shell command.
