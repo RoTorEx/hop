@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-07-12
+
 ### Fixed
 
 - Made both installed shell commands, `j` and `jumper`, change the current
