@@ -10,6 +10,8 @@ Tracks real product and release progress.
   moved all CLI argument handling back into the Rust executable.
 - Made the shell bridge call the absolute installed binary, keep PATH updates
   idempotent, validate destinations, and refresh during `jumper update`.
+- Added a narrow installer migration for unmarked PATH and `j()` snippets from
+  early Jumper installations.
 
 ### Fixed
 

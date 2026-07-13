@@ -169,10 +169,38 @@ remove_existing_block() {
     cat "$cleaned" > "$profile_file"
 }
 
+remove_legacy_integration() {
+    profile_file="$1"
+    cleaned="$tmp/profile-legacy-cleaned"
+    awk '
+        $0 == "export PATH=\"$HOME/.x-cli-jumper:$PATH\"" { next }
+        $0 == "j() {" {
+            first = $0
+            second = third = fourth = ""
+            if ((getline second) > 0 &&
+                (getline third) > 0 &&
+                (getline fourth) > 0 &&
+                second == "    local d" &&
+                third == "    d=\"$(jumper \"$@\")\" && [ -n \"$d\" ] && cd \"$d\"" &&
+                fourth == "}") {
+                next
+            }
+            print first
+            if (second != "") print second
+            if (third != "") print third
+            if (fourth != "") print fourth
+            next
+        }
+        { print }
+    ' "$profile_file" > "$cleaned"
+    cat "$cleaned" > "$profile_file"
+}
+
 update_one_profile() {
     profile_file="$1"
     mkdir -p "$(dirname "$profile_file")"
     touch "$profile_file"
+    remove_legacy_integration "$profile_file"
     remove_existing_block "$profile_file"
     {
         printf "\n# >>> x-cli-jumper >>>\n"
