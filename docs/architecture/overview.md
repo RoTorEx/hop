@@ -20,9 +20,12 @@ on developer machines, VMs, and VPS hosts.
    `~/.x-cli-jumper`.
 9. Copy mode writes no stdout and sends the selected path to the system
    clipboard with an available platform clipboard command.
-10. The installed `jumper` shell wrapper captures stdout and runs `cd` in the
-    caller shell when jump mode returns a path. Non-jump commands dispatch
-    directly to the binary. The installer removes legacy `j` shell integration.
+10. Profile files contain only a managed source line for
+    `~/.x-cli-jumper/init.zsh`. That bridge calls the absolute installed binary,
+    captures its stdout, validates the returned directory, and runs `cd` in the
+    caller shell. The Rust CLI owns all argument parsing.
+11. If the raw executable runs from a terminal without the bridge, it reports
+    that it cannot change its parent shell instead of silently printing a path.
 
 `jumper config` refreshes the config file by scanning `$HOME` or an explicit
 `--root <dir>`, merging newly discovered projects into the existing file, and
@@ -41,12 +44,12 @@ provides that behavior.
   selected path to the system clipboard.
 - Network access is limited to the optional installer, GitHub release flow, and
   explicit `jumper update` command.
-- Installation writes one binary to `~/.x-cli-jumper/jumper`, refreshes the
-  compatibility init file at `~/.x-cli-jumper/init.zsh`, and may update bash/zsh
-  profile files with an idempotent marked block.
+- Installation writes one binary to `~/.x-cli-jumper/jumper`, writes the shell
+  bridge to `~/.x-cli-jumper/init.zsh`, and updates bash/zsh profile files with
+  an idempotent marked source block.
 - For authenticated GitHub installs, the installer reads `GH_INSTALLER_TOKEN`
   and stores it at `~/.x-cli-jumper/gh-token` with mode `0600` for later
   updates.
-- `jumper update` downloads the latest matching Linux release archive from
-  GitHub Releases, using `~/.x-cli-jumper/gh-token` when present, and replaces
-  the current executable.
+- `jumper update` downloads the latest matching release archive from GitHub
+  Releases, using `~/.x-cli-jumper/gh-token` when present, and refreshes the
+  current executable and generated shell bridge through atomic file replacements.

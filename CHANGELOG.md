@@ -4,6 +4,18 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Changed
+
+- Reduced managed shell profile integration to one sourced bridge file and
+  moved all CLI argument handling back into the Rust executable.
+- Made the shell bridge call the absolute installed binary, keep PATH updates
+  idempotent, validate destinations, and refresh during `jumper update`.
+
+### Fixed
+
+- Raw interactive executable use now explains why it cannot change the parent
+  shell instead of silently leaving the user in the original directory.
+
 ## [0.2.4] - 2026-07-12
 
 ### Changed

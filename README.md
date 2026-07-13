@@ -37,47 +37,22 @@ curl -fsSL https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install
 ```
 
 The installer builds with Cargo, copies the binary to
-`~/.x-cli-jumper/jumper`, refreshes `~/.x-cli-jumper/init.zsh` for legacy
-profile setups, stores a supplied private repo update token at
-`~/.x-cli-jumper/gh-token` with file mode `0600`, and adds this integration to
-bash/zsh profile files:
+`~/.x-cli-jumper/jumper`, writes the shell bridge to
+`~/.x-cli-jumper/init.zsh`, stores a supplied private repo update token at
+`~/.x-cli-jumper/gh-token` with file mode `0600`, and adds only this small,
+managed block to bash/zsh profile files:
 
 ```bash
-export PATH="$HOME/.x-cli-jumper:$PATH"
-
-unalias j 2>/dev/null || true
-unalias jumper 2>/dev/null || true
-if [ -n "${ZSH_VERSION:-}" ]; then
-    unfunction j 2>/dev/null || true
-    unfunction jumper 2>/dev/null || true
-else
-    unset -f j 2>/dev/null || true
-    unset -f jumper 2>/dev/null || true
-fi
-
-function jumper {
-    local arg
-    for arg in "$@"; do
-        case "$arg" in
-            -h|--help|-v|-V|--version|--shell-init|config|update)
-                command jumper "$@"
-                return
-                ;;
-        esac
-    done
-
-    local d
-    local exit_status
-    d="$(command jumper "$@")"
-    exit_status=$?
-    if [ "$exit_status" -ne 0 ]; then
-        return "$exit_status"
-    fi
-    if [ -n "$d" ]; then
-        builtin cd -- "$d"
-    fi
-}
+# >>> x-cli-jumper >>>
+[ -r "$HOME/.x-cli-jumper/init.zsh" ] && . "$HOME/.x-cli-jumper/init.zsh"
+# <<< x-cli-jumper <<<
 ```
+
+The bridge is required because a child process cannot change its parent shell's
+working directory. It delegates all argument parsing to the Rust CLI, uses the
+absolute installed binary path, validates the selected directory, and contains
+the only `cd` needed by the integration. `jumper update` refreshes both the
+binary and this bridge.
 
 Open a new shell or source your profile, then run:
 
@@ -100,7 +75,6 @@ jumper A1
 jumper --copy-path A1
 jumper update
 jumper --root /srv
-jumper --shell-init
 ```
 
 Interactive UI, help, and version output are written to stderr. The installed
@@ -123,10 +97,10 @@ an ad hoc scan instead of using the config.
 Normal `jumper` jump mode requires the config file. If it is missing, jumper
 prints an alert and exits; run `jumper config` first.
 
-`jumper update` replaces the current executable with the latest Linux or macOS
-binary for the current CPU architecture from GitHub Releases. It requires `curl`
-or `wget`, plus `tar`. If `~/.x-cli-jumper/gh-token` exists, updates use that
-token for GitHub authentication.
+`jumper update` replaces the current executable and refreshes `init.zsh` from
+the latest Linux or macOS release for the current CPU architecture. It requires
+`curl` or `wget`, plus `tar`. If `~/.x-cli-jumper/gh-token` exists, updates use
+that token for GitHub authentication.
 
 ## Release Flow
 

@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
@@ -12,6 +12,7 @@ use jumper::{
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const RELEASE_BASE_URL: &str = "https://github.com/RoTorEx/jumper/releases/latest/download";
+const SHELL_BINARY_ENV: &str = "JUMPER_SHELL_BINARY";
 
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
@@ -62,7 +63,11 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Command::ShellInit => {
-            print_shell_init();
+            let binary = match shell_binary_path() {
+                Ok(binary) => binary,
+                Err(message) => return fail(&message, options.color),
+            };
+            print_shell_init(&binary);
             ExitCode::SUCCESS
         }
         Command::Update => run_update(options.color),
@@ -135,10 +140,34 @@ fn run_update(color: bool) -> ExitCode {
         return fail("Release archive did not contain a jumper binary.", color);
     }
 
+    if let Err(error) = set_executable(&updated) {
+        cleanup_dir(&temp_dir);
+        return fail(
+            &format!("Cannot prepare updated executable: {error}"),
+            color,
+        );
+    }
+
+    let updated_shell_init = match generate_shell_init(&updated, &current_exe) {
+        Ok(shell_init) => shell_init,
+        Err(message) => {
+            cleanup_dir(&temp_dir);
+            return fail(&message, color);
+        }
+    };
+
     if let Err(error) = install_updated_binary(&updated, &current_exe) {
         cleanup_dir(&temp_dir);
         return fail(
             &format!("Cannot update {}: {error}", current_exe.display()),
+            color,
+        );
+    }
+
+    if let Err(error) = install_shell_init(&updated_shell_init, &current_exe) {
+        cleanup_dir(&temp_dir);
+        return fail(
+            &format!("Updated the binary but could not refresh shell integration: {error}"),
             color,
         );
     }
@@ -366,6 +395,23 @@ fn emit_path(path: &std::path::Path, copy_path: bool, color: bool) -> ExitCode {
         return copy_to_clipboard(path, color);
     }
 
+    if io::stdout().is_terminal() {
+        eprintln!(
+            "{}",
+            paint(
+                color,
+                YELLOW,
+                "Shell integration is not active, so the jumper executable cannot change this shell's directory.",
+            ),
+        );
+        eprintln!(
+            "Selected: {}\nActivate it with: {}",
+            path.display(),
+            shell_activation_command(),
+        );
+        return ExitCode::from(1);
+    }
+
     println!("{}", path.display());
     ExitCode::SUCCESS
 }
@@ -567,6 +613,41 @@ fn install_updated_binary(source: &Path, destination: &Path) -> io::Result<()> {
     result
 }
 
+fn generate_shell_init(binary: &Path, installed_binary: &Path) -> Result<Vec<u8>, String> {
+    let output = ProcessCommand::new(binary)
+        .arg("--shell-init")
+        .env(SHELL_BINARY_ENV, installed_binary)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|error| format!("Cannot generate updated shell integration: {error}"))?;
+
+    if !output.status.success() || output.stdout.is_empty() {
+        return Err("Updated binary could not generate shell integration.".to_owned());
+    }
+
+    Ok(output.stdout)
+}
+
+fn install_shell_init(contents: &[u8], installed_binary: &Path) -> io::Result<()> {
+    let parent = installed_binary
+        .parent()
+        .ok_or_else(|| io::Error::other("executable has no parent directory"))?;
+    let destination = parent.join("init.zsh");
+    let temporary = parent.join(format!(".jumper-init-update-{}", std::process::id()));
+
+    let result = (|| {
+        fs::write(&temporary, contents)?;
+        set_shell_init_permissions(&temporary)?;
+        fs::rename(&temporary, destination)
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+
+    result
+}
+
 fn recreate_dir(path: &Path) -> io::Result<()> {
     cleanup_dir(path);
     fs::create_dir_all(path)
@@ -596,8 +677,20 @@ fn set_executable(path: &Path) -> io::Result<()> {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755))
 }
 
+#[cfg(unix)]
+fn set_shell_init_permissions(path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(path, fs::Permissions::from_mode(0o644))
+}
+
 #[cfg(not(unix))]
 fn set_executable(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_shell_init_permissions(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
@@ -756,7 +849,6 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
     jumper ~
     jumper config [--root <dir>]
     jumper update
-    jumper --shell-init
     jumper --version
 
 {}:
@@ -767,7 +859,6 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
     --copy-path      Copy the selected path instead of printing it
     --root <dir>      Scan a directory instead of $HOME
     --no-color        Disable ANSI color output
-    --shell-init      Print bash/zsh integration for the jumper command
     -v, -V, --version Print version
     -h, --help        Print help
 
@@ -783,17 +874,35 @@ project path to the clipboard.",
     );
 }
 
-fn print_shell_init() {
-    println!("{}", shell_init());
+fn shell_binary_path() -> Result<PathBuf, String> {
+    if let Some(binary) = env::var_os(SHELL_BINARY_ENV).filter(|value| !value.is_empty()) {
+        return Ok(PathBuf::from(binary));
+    }
+
+    env::current_exe().map_err(|error| format!("Cannot locate current executable: {error}"))
 }
 
-fn shell_init() -> &'static str {
-    r#"# x-cli-jumper
-export PATH="$HOME/.x-cli-jumper:$PATH"
+fn print_shell_init(binary: &Path) {
+    println!("{}", shell_init(binary));
+}
+
+fn shell_init(binary: &Path) -> String {
+    let binary_dir = binary.parent().unwrap_or_else(|| Path::new("."));
+    let binary = shell_quote(&binary.display().to_string());
+    let binary_dir = shell_quote(&binary_dir.display().to_string());
+
+    format!(
+        r#"# x-cli-jumper shell bridge
+_jumper_bin_dir={binary_dir}
+case ":$PATH:" in
+    *":$_jumper_bin_dir:"*) ;;
+    *) export PATH="$_jumper_bin_dir:$PATH" ;;
+esac
+unset _jumper_bin_dir
 
 unalias j 2>/dev/null || true
 unalias jumper 2>/dev/null || true
-if [ -n "${ZSH_VERSION:-}" ]; then
+if [ -n "${{ZSH_VERSION:-}}" ]; then
     unfunction j 2>/dev/null || true
     unfunction jumper 2>/dev/null || true
 else
@@ -801,33 +910,44 @@ else
     unset -f jumper 2>/dev/null || true
 fi
 
-function jumper {
-    local arg
-    for arg in "$@"; do
-        case "$arg" in
-            -h|--help|-v|-V|--version|--shell-init|config|update)
-                command jumper "$@"
-                return
-                ;;
-        esac
-    done
-
-    local d
+function jumper {{
+    local destination
     local exit_status
-    d="$(command jumper "$@")"
+    destination="$(command {binary} "$@")"
     exit_status=$?
     if [ "$exit_status" -ne 0 ]; then
         return "$exit_status"
     fi
-    if [ -n "$d" ]; then
-        builtin cd -- "$d"
+    if [ -z "$destination" ]; then
+        return 0
     fi
-}"#
+    if [ ! -d "$destination" ]; then
+        printf '%s\n' "jumper: invalid destination: $destination" >&2
+        return 1
+    fi
+    builtin cd -- "$destination"
+}}"#,
+    )
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn shell_activation_command() -> String {
+    env::current_exe()
+        .ok()
+        .and_then(|binary| binary.parent().map(|parent| parent.join("init.zsh")))
+        .map_or_else(
+            || ". \"$HOME/.x-cli-jumper/init.zsh\"".to_owned(),
+            |init| format!(". {}", shell_quote(&init.display().to_string())),
+        )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn cli_home_shortcut_accepts_literal_and_shell_expanded_home() {
@@ -846,7 +966,7 @@ mod tests {
 
     #[test]
     fn shell_init_removes_legacy_j_and_wraps_only_jumper() {
-        let init = shell_init();
+        let init = shell_init(Path::new("/opt/jumper bin/jumper"));
 
         assert!(init.contains("unalias j"));
         assert!(init.contains("unalias jumper"));
@@ -857,10 +977,55 @@ mod tests {
         assert!(init.contains("function jumper"));
         assert!(!init.contains("\nfunction j {"));
         assert!(!init.contains("_jumper_dispatch"));
-        assert!(init.contains("command jumper \"$@\""));
-        assert!(init.contains("d=\"$(command jumper \"$@\")\""));
-        assert!(init.contains("builtin cd -- \"$d\""));
+        assert!(!init.contains("for arg in"));
+        assert!(init.contains("command '/opt/jumper bin/jumper' \"$@\""));
+        assert!(init.contains("builtin cd -- \"$destination\""));
         assert!(init.contains("return \"$exit_status\""));
+        assert!(init.contains("invalid destination"));
+    }
+
+    #[test]
+    fn shell_quote_handles_apostrophes() {
+        assert_eq!(
+            shell_quote("/tmp/alex's/jumper"),
+            "'/tmp/alex'\"'\"'s/jumper'"
+        );
+    }
+
+    #[test]
+    fn installs_shell_init_next_to_binary() {
+        let root = temp_root("shell-init");
+        let binary = root.join("bin/jumper");
+        fs::create_dir_all(binary.parent().expect("binary parent")).expect("create bin dir");
+
+        install_shell_init(b"bridge\n", &binary).expect("install shell init");
+
+        let init = binary.parent().expect("binary parent").join("init.zsh");
+        assert_eq!(fs::read(&init).expect("read shell init"), b"bridge\n");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            assert_eq!(
+                fs::metadata(&init)
+                    .expect("shell init metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o644,
+            );
+        }
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn temp_root(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        env::temp_dir().join(format!("jumper-main-{name}-{}-{nanos}", std::process::id()))
     }
 
     #[test]

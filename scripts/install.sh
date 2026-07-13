@@ -19,9 +19,8 @@ Environment:
   JUMPER_INSTALL_DIR   install directory, default ~/.x-cli-jumper
   GH_INSTALLER_TOKEN   GitHub token for private repo installs
 
-The installer builds with Cargo, copies the jumper binary into the install
-directory, and updates bash/zsh profile files with the PATH and jumper() shell
-wrapper.
+The installer builds with Cargo, copies the jumper binary and shell bridge into
+the install directory, and adds one managed source line to bash/zsh profiles.
 USAGE
 }
 
@@ -144,7 +143,8 @@ echo "Building jumper"
 mkdir -p "$install_dir"
 cp "$source_dir/target/release/jumper" "$install_dir/jumper"
 chmod 0755 "$install_dir/jumper"
-"$install_dir/jumper" --shell-init > "$install_dir/init.zsh"
+JUMPER_SHELL_BINARY="$install_dir/jumper" \
+    "$install_dir/jumper" --shell-init > "$install_dir/init.zsh"
 chmod 0644 "$install_dir/init.zsh"
 if [ -n "$installer_token" ]; then
     token_file="$install_dir/gh-token"
@@ -153,7 +153,9 @@ if [ -n "$installer_token" ]; then
 fi
 
 profile_block() {
-    "$install_dir/jumper" --shell-init
+    init_file="$install_dir/init.zsh"
+    escaped_init_file="$(printf '%s' "$init_file" | sed 's/[\\"$`]/\\&/g')"
+    printf '[ -r "%s" ] && . "%s"\n' "$escaped_init_file" "$escaped_init_file"
 }
 
 remove_existing_block() {
@@ -199,4 +201,5 @@ if [ "$update_profile" -eq 1 ]; then
 fi
 
 echo "Installed $install_dir/jumper"
-echo "Open a new shell or source your profile, then run: jumper"
+echo "Open a new shell or activate this one with:"
+profile_block
