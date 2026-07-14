@@ -20,12 +20,12 @@ on developer machines, VMs, and VPS hosts.
    `~/.x-cli-jumper`.
 9. Copy mode writes no stdout and sends the selected path to the system
    clipboard with an available platform clipboard command.
-10. Profile files contain a normal PATH export for `~/.x-cli-jumper` and a
-    managed source line for `~/.x-cli-jumper/init.zsh`. The installer preserves
-    an existing canonical export so it can live alongside the user's other CLI
-    paths. The bridge calls the absolute installed binary, captures its stdout,
-    validates the returned directory, and runs `cd` in the caller shell. The
-    Rust CLI owns all argument parsing.
+10. Profile files contain only two plain integration lines: a PATH export for
+    `~/.x-cli-jumper` and `source "$HOME/.x-cli-jumper/init.zsh"`. The installer
+    preserves existing canonical lines so they can live alongside the user's
+    other CLI paths and sources. The bridge calls the absolute installed binary,
+    captures its stdout, validates the returned directory, and runs `cd` in the
+    caller shell. The Rust CLI owns all argument parsing.
 11. If the raw executable runs from a terminal without the bridge, it reports
     that it cannot change its parent shell instead of silently printing a path.
 
@@ -48,7 +48,7 @@ provides that behavior.
   explicit `jumper update` command.
 - Installation writes one binary to `~/.x-cli-jumper/jumper`, writes the shell
   bridge to `~/.x-cli-jumper/init.zsh`, and updates bash/zsh profile files with
-  an idempotent PATH export and marked source block.
+  one idempotent PATH export and one idempotent source line.
 - For authenticated GitHub installs, the installer reads `GH_INSTALLER_TOKEN`
   and stores it at `~/.x-cli-jumper/gh-token` with mode `0600` for later
   updates.

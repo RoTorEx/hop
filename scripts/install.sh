@@ -20,8 +20,8 @@ Environment:
   GH_INSTALLER_TOKEN   GitHub token for private repo installs
 
 The installer builds with Cargo, copies the jumper binary and shell bridge into
-the install directory, and adds a managed PATH export and source line to
-bash/zsh profiles.
+the install directory, and adds one PATH export and one source line to bash/zsh
+profiles.
 USAGE
 }
 
@@ -162,17 +162,27 @@ path_export() {
     fi
 }
 
-profile_block() {
+profile_source() {
+    init_file="$install_dir/init.zsh"
+    escaped_init_file="$(printf '%s' "$init_file" | sed 's/[\\"$`]/\\&/g')"
+    if [ "$init_file" = "$HOME/.x-cli-jumper/init.zsh" ]; then
+        printf 'source "$HOME/.x-cli-jumper/init.zsh"\n'
+    else
+        printf 'source "%s"\n' "$escaped_init_file"
+    fi
+}
+
+legacy_profile_source() {
     init_file="$install_dir/init.zsh"
     escaped_init_file="$(printf '%s' "$init_file" | sed 's/[\\"$`]/\\&/g')"
     printf '[ -r "%s" ] && . "%s"\n' "$escaped_init_file" "$escaped_init_file"
 }
 
-ensure_path_export() {
+ensure_profile_line() {
     profile_file="$1"
-    export_line="$(path_export)"
-    if ! grep -Fqx "$export_line" "$profile_file"; then
-        printf '\n%s\n' "$export_line" >> "$profile_file"
+    profile_line="$2"
+    if ! grep -Fqx "$profile_line" "$profile_file"; then
+        printf '\n%s\n' "$profile_line" >> "$profile_file"
     fi
 }
 
@@ -190,7 +200,10 @@ remove_existing_block() {
 remove_legacy_integration() {
     profile_file="$1"
     cleaned="$tmp/profile-legacy-cleaned"
-    awk '
+    old_source_line="$(legacy_profile_source)"
+    awk -v old_source_line="$old_source_line" '
+        $0 == "# x-cli-jumper" { next }
+        $0 == old_source_line { next }
         $0 == "j() {" {
             first = $0
             second = third = fourth = ""
@@ -219,12 +232,8 @@ update_one_profile() {
     touch "$profile_file"
     remove_legacy_integration "$profile_file"
     remove_existing_block "$profile_file"
-    ensure_path_export "$profile_file"
-    {
-        printf "\n# >>> x-cli-jumper >>>\n"
-        profile_block
-        printf "# <<< x-cli-jumper <<<\n"
-    } >> "$profile_file"
+    ensure_profile_line "$profile_file" "$(path_export)"
+    ensure_profile_line "$profile_file" "$(profile_source)"
     echo "Updated $profile_file"
 }
 
@@ -248,4 +257,4 @@ fi
 
 echo "Installed $install_dir/jumper"
 echo "Open a new shell or activate this one with:"
-profile_block
+profile_source

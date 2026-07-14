@@ -4,6 +4,11 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Changed
+
+- Simplified shell profiles to one ordinary PATH export and one ordinary source
+  line, removing managed markers and conditional source expressions.
+
 ## [0.2.5] - 2026-07-14
 
 ### Changed
