@@ -39,8 +39,8 @@ curl -fsSL https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install
 The installer builds with Cargo, copies the binary to
 `~/.x-cli-jumper/bin/jumper`, writes the shell bridge to
 `~/.x-cli-jumper/init.zsh`, stores a supplied private repo update token at
-`~/.x-cli-jumper/gh-token` with file mode `0600`, and adds one plain line to
-bash/zsh profile files:
+`~/.x-cli-jumper/gh-token` with file mode `0600`, and adds one plain line to the
+active bash/zsh profile:
 
 ```bash
 source "$HOME/.x-cli-jumper/init.zsh"

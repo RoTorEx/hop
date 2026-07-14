@@ -46,9 +46,10 @@ provides that behavior.
 - Network access is limited to the optional installer, GitHub release flow, and
   explicit `jumper update` command.
 - Installation writes one binary to `~/.x-cli-jumper/bin/jumper`, writes the
-  shell bridge to `~/.x-cli-jumper/init.zsh`, and updates bash/zsh profile files
-  with one idempotent source line. It removes the known root-level binary and
-  legacy Jumper profile entries without touching config, tokens, or caches.
+  shell bridge to `~/.x-cli-jumper/init.zsh`, and updates only the active
+  bash/zsh profile with one idempotent source line. Unsupported shells are left
+  unchanged. The installer removes the known root-level binary and legacy
+  Jumper profile entries without touching config, tokens, or caches.
 - For authenticated GitHub installs, the installer reads `GH_INSTALLER_TOKEN`
   and stores it at `~/.x-cli-jumper/gh-token` with mode `0600` for later
   updates.

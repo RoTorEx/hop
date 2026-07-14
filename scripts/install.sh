@@ -21,7 +21,7 @@ Environment:
   GH_INSTALLER_TOKEN   GitHub token for private repo installs
 
 The installer builds with Cargo, installs the binary under bin/, writes the
-shell bridge, and adds one source line to bash/zsh profiles.
+shell bridge, and adds one source line to the active bash/zsh profile.
 USAGE
 }
 
@@ -268,21 +268,18 @@ update_one_profile() {
 }
 
 if [ "$update_profile" -eq 1 ]; then
-    profiles=""
-    [ -f "$HOME/.zshrc" ] && profiles="$profiles $HOME/.zshrc"
-    [ -f "$HOME/.bashrc" ] && profiles="$profiles $HOME/.bashrc"
+    profile=""
+    case "${SHELL:-}" in
+        */zsh) profile="$HOME/.zshrc" ;;
+        */bash) profile="$HOME/.bashrc" ;;
+        *)
+            echo "Shell integration supports bash and zsh; profile was not changed." >&2
+            ;;
+    esac
 
-    if [ -z "$profiles" ]; then
-        case "${SHELL:-}" in
-            */zsh) profiles="$HOME/.zshrc" ;;
-            */bash) profiles="$HOME/.bashrc" ;;
-            *) profiles="$HOME/.profile" ;;
-        esac
-    fi
-
-    for profile in $profiles; do
+    if [ -n "$profile" ]; then
         update_one_profile "$profile"
-    done
+    fi
 fi
 
 echo "Installed $installed_binary"

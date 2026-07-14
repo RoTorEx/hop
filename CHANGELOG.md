@@ -13,6 +13,8 @@ Tracks real product and release progress.
   root-level binary while preserving config, tokens, and caches.
 - Updated self-update path discovery to support both the legacy root-level
   executable and the new `bin/` layout.
+- Limited automatic profile edits to the active bash or zsh profile instead of
+  touching multiple profiles or writing bash/zsh syntax into `.profile`.
 
 ## [0.2.5] - 2026-07-14
 
