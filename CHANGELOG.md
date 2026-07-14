@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-07-14
+
 ### Changed
 
 - Reduced shell profile setup to one ordinary source line; the sourced bridge
