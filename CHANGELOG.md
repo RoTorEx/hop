@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-07-14
+
 ### Changed
 
 - Reduced managed shell profile integration to one sourced bridge file and
