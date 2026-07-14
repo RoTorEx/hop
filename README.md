@@ -37,21 +37,21 @@ curl -fsSL https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install
 ```
 
 The installer builds with Cargo, copies the binary to
-`~/.x-cli-jumper/jumper`, writes the shell bridge to
+`~/.x-cli-jumper/bin/jumper`, writes the shell bridge to
 `~/.x-cli-jumper/init.zsh`, stores a supplied private repo update token at
-`~/.x-cli-jumper/gh-token` with file mode `0600`, and adds two plain lines to
+`~/.x-cli-jumper/gh-token` with file mode `0600`, and adds one plain line to
 bash/zsh profile files:
 
 ```bash
-export PATH="$HOME/.x-cli-jumper:$PATH"
 source "$HOME/.x-cli-jumper/init.zsh"
 ```
 
 The bridge is required because a child process cannot change its parent shell's
-working directory. It delegates all argument parsing to the Rust CLI, uses the
-absolute installed binary path, validates the selected directory, and contains
-the only `cd` needed by the integration. `jumper update` refreshes both the
-binary and this bridge.
+working directory. It adds `~/.x-cli-jumper/bin` to PATH without duplicates,
+delegates all argument parsing to the Rust CLI, uses the absolute installed
+binary path, validates the selected directory, and contains the only `cd`
+needed by the integration. `jumper update` refreshes both the binary and this
+bridge.
 
 Open a new shell or source your profile, then run:
 
@@ -96,10 +96,10 @@ an ad hoc scan instead of using the config.
 Normal `jumper` jump mode requires the config file. If it is missing, jumper
 prints an alert and exits; run `jumper config` first.
 
-`jumper update` replaces the current executable and refreshes `init.zsh` from
-the latest Linux or macOS release for the current CPU architecture. It requires
-`curl` or `wget`, plus `tar`. If `~/.x-cli-jumper/gh-token` exists, updates use
-that token for GitHub authentication.
+`jumper update` replaces `~/.x-cli-jumper/bin/jumper` and refreshes `init.zsh`
+from the latest Linux or macOS release for the current CPU architecture. It
+requires `curl` or `wget`, plus `tar`. If `~/.x-cli-jumper/gh-token` exists,
+updates use that token for GitHub authentication.
 
 ## Release Flow
 

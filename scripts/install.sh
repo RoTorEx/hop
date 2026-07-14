@@ -4,6 +4,7 @@ set -eu
 repo="RoTorEx/jumper"
 ref="main"
 install_dir="${HOME:-}/.x-cli-jumper"
+bin_dir="$install_dir/bin"
 update_profile=1
 
 usage() {
@@ -19,15 +20,15 @@ Environment:
   JUMPER_INSTALL_DIR   install directory, default ~/.x-cli-jumper
   GH_INSTALLER_TOKEN   GitHub token for private repo installs
 
-The installer builds with Cargo, copies the jumper binary and shell bridge into
-the install directory, and adds one PATH export and one source line to bash/zsh
-profiles.
+The installer builds with Cargo, installs the binary under bin/, writes the
+shell bridge, and adds one source line to bash/zsh profiles.
 USAGE
 }
 
 repo="${JUMPER_REPO:-$repo}"
 ref="${JUMPER_REF:-$ref}"
 install_dir="${JUMPER_INSTALL_DIR:-$install_dir}"
+bin_dir="$install_dir/bin"
 installer_token="${GH_INSTALLER_TOKEN:-}"
 
 while [ "$#" -gt 0 ]; do
@@ -62,10 +63,12 @@ while [ "$#" -gt 0 ]; do
                 exit 1
             fi
             install_dir="${2:-}"
+            bin_dir="$install_dir/bin"
             shift 2
             ;;
         --dir=*)
             install_dir="${1#--dir=}"
+            bin_dir="$install_dir/bin"
             shift
             ;;
         --no-profile)
@@ -141,24 +144,45 @@ fi
 echo "Building jumper"
 (cd "$source_dir" && cargo build --release --locked)
 
-mkdir -p "$install_dir"
-cp "$source_dir/target/release/jumper" "$install_dir/jumper"
-chmod 0755 "$install_dir/jumper"
-JUMPER_SHELL_BINARY="$install_dir/jumper" \
-    "$install_dir/jumper" --shell-init > "$install_dir/init.zsh"
-chmod 0644 "$install_dir/init.zsh"
+installed_binary="$bin_dir/jumper"
+legacy_binary="$install_dir/jumper"
+generated_init="$tmp/init.zsh"
+temporary_binary="$bin_dir/.jumper-install-$$"
+temporary_init="$install_dir/.init.zsh-install-$$"
+
+mkdir -p "$bin_dir"
+JUMPER_SHELL_BINARY="$installed_binary" \
+    "$source_dir/target/release/jumper" --shell-init > "$generated_init"
+cp "$source_dir/target/release/jumper" "$temporary_binary"
+chmod 0755 "$temporary_binary"
+mv "$temporary_binary" "$installed_binary"
+cp "$generated_init" "$temporary_init"
+chmod 0644 "$temporary_init"
+mv "$temporary_init" "$install_dir/init.zsh"
+if [ -f "$legacy_binary" ]; then
+    rm -f "$legacy_binary"
+fi
 if [ -n "$installer_token" ]; then
     token_file="$install_dir/gh-token"
     (umask 077 && printf "%s\n" "$installer_token" > "$token_file")
     chmod 0600 "$token_file"
 fi
 
-path_export() {
+legacy_path_export() {
     escaped_install_dir="$(printf '%s' "$install_dir" | sed 's/[\\"$`]/\\&/g')"
     if [ "$install_dir" = "$HOME/.x-cli-jumper" ]; then
         printf 'export PATH="$HOME/.x-cli-jumper:$PATH"\n'
     else
         printf 'export PATH="%s:$PATH"\n' "$escaped_install_dir"
+    fi
+}
+
+legacy_bin_path_export() {
+    escaped_bin_dir="$(printf '%s' "$bin_dir" | sed 's/[\\"$`]/\\&/g')"
+    if [ "$bin_dir" = "$HOME/.x-cli-jumper/bin" ]; then
+        printf 'export PATH="$HOME/.x-cli-jumper/bin:$PATH"\n'
+    else
+        printf 'export PATH="%s:$PATH"\n' "$escaped_bin_dir"
     fi
 }
 
@@ -201,9 +225,16 @@ remove_legacy_integration() {
     profile_file="$1"
     cleaned="$tmp/profile-legacy-cleaned"
     old_source_line="$(legacy_profile_source)"
-    awk -v old_source_line="$old_source_line" '
+    old_path_line="$(legacy_path_export)"
+    old_bin_path_line="$(legacy_bin_path_export)"
+    awk \
+        -v old_source_line="$old_source_line" \
+        -v old_path_line="$old_path_line" \
+        -v old_bin_path_line="$old_bin_path_line" '
         $0 == "# x-cli-jumper" { next }
         $0 == old_source_line { next }
+        $0 == old_path_line { next }
+        $0 == old_bin_path_line { next }
         $0 == "j() {" {
             first = $0
             second = third = fourth = ""
@@ -232,7 +263,6 @@ update_one_profile() {
     touch "$profile_file"
     remove_legacy_integration "$profile_file"
     remove_existing_block "$profile_file"
-    ensure_profile_line "$profile_file" "$(path_export)"
     ensure_profile_line "$profile_file" "$(profile_source)"
     echo "Updated $profile_file"
 }
@@ -255,6 +285,6 @@ if [ "$update_profile" -eq 1 ]; then
     done
 fi
 
-echo "Installed $install_dir/jumper"
+echo "Installed $installed_binary"
 echo "Open a new shell or activate this one with:"
 profile_source

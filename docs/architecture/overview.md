@@ -20,12 +20,11 @@ on developer machines, VMs, and VPS hosts.
    `~/.x-cli-jumper`.
 9. Copy mode writes no stdout and sends the selected path to the system
    clipboard with an available platform clipboard command.
-10. Profile files contain only two plain integration lines: a PATH export for
-    `~/.x-cli-jumper` and `source "$HOME/.x-cli-jumper/init.zsh"`. The installer
-    preserves existing canonical lines so they can live alongside the user's
-    other CLI paths and sources. The bridge calls the absolute installed binary,
-    captures its stdout, validates the returned directory, and runs `cd` in the
-    caller shell. The Rust CLI owns all argument parsing.
+10. Profile files contain only one integration line:
+    `source "$HOME/.x-cli-jumper/init.zsh"`. The bridge idempotently adds
+    `~/.x-cli-jumper/bin` to PATH, calls the absolute installed binary, captures
+    its stdout, validates the returned directory, and runs `cd` in the caller
+    shell. The Rust CLI owns all argument parsing.
 11. If the raw executable runs from a terminal without the bridge, it reports
     that it cannot change its parent shell instead of silently printing a path.
 
@@ -46,12 +45,15 @@ provides that behavior.
   selected path to the system clipboard.
 - Network access is limited to the optional installer, GitHub release flow, and
   explicit `jumper update` command.
-- Installation writes one binary to `~/.x-cli-jumper/jumper`, writes the shell
-  bridge to `~/.x-cli-jumper/init.zsh`, and updates bash/zsh profile files with
-  one idempotent PATH export and one idempotent source line.
+- Installation writes one binary to `~/.x-cli-jumper/bin/jumper`, writes the
+  shell bridge to `~/.x-cli-jumper/init.zsh`, and updates bash/zsh profile files
+  with one idempotent source line. It removes the known root-level binary and
+  legacy Jumper profile entries without touching config, tokens, or caches.
 - For authenticated GitHub installs, the installer reads `GH_INSTALLER_TOKEN`
   and stores it at `~/.x-cli-jumper/gh-token` with mode `0600` for later
   updates.
 - `jumper update` downloads the latest matching release archive from GitHub
   Releases, using `~/.x-cli-jumper/gh-token` when present, and refreshes the
-  current executable and generated shell bridge through atomic file replacements.
+  current executable and root-level generated shell bridge through atomic file
+  replacements. The updater recognizes both legacy root-level and `bin/`
+  executable layouts.

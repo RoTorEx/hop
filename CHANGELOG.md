@@ -6,8 +6,13 @@ Tracks real product and release progress.
 
 ### Changed
 
-- Simplified shell profiles to one ordinary PATH export and one ordinary source
-  line, removing managed markers and conditional source expressions.
+- Reduced shell profile setup to one ordinary source line; the sourced bridge
+  now owns idempotent PATH setup and same-shell directory changes.
+- Moved the installed executable to `~/.x-cli-jumper/bin/jumper` and added a
+  migration that removes only known legacy profile entries and the old
+  root-level binary while preserving config, tokens, and caches.
+- Updated self-update path discovery to support both the legacy root-level
+  executable and the new `bin/` layout.
 
 ## [0.2.5] - 2026-07-14
 

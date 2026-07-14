@@ -1,4 +1,5 @@
 use std::env;
+use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -478,10 +479,10 @@ fn release_asset_name_for(os: &str, arch: &str) -> Option<&'static str> {
 }
 
 fn read_update_token(current_exe: &Path) -> Result<Option<String>, String> {
-    let Some(parent) = current_exe.parent() else {
+    let Some(install_home) = installation_home(current_exe) else {
         return Ok(None);
     };
-    let token_file = parent.join("gh-token");
+    let token_file = install_home.join("gh-token");
     let token = match fs::read_to_string(&token_file) {
         Ok(token) => token,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -629,11 +630,10 @@ fn generate_shell_init(binary: &Path, installed_binary: &Path) -> Result<Vec<u8>
 }
 
 fn install_shell_init(contents: &[u8], installed_binary: &Path) -> io::Result<()> {
-    let parent = installed_binary
-        .parent()
+    let install_home = installation_home(installed_binary)
         .ok_or_else(|| io::Error::other("executable has no parent directory"))?;
-    let destination = parent.join("init.zsh");
-    let temporary = parent.join(format!(".jumper-init-update-{}", std::process::id()));
+    let destination = install_home.join("init.zsh");
+    let temporary = install_home.join(format!(".jumper-init-update-{}", std::process::id()));
 
     let result = (|| {
         fs::write(&temporary, contents)?;
@@ -934,10 +934,19 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
+fn installation_home(binary: &Path) -> Option<&Path> {
+    let parent = binary.parent()?;
+    if parent.file_name() == Some(OsStr::new("bin")) {
+        parent.parent()
+    } else {
+        Some(parent)
+    }
+}
+
 fn shell_activation_command() -> String {
     env::current_exe()
         .ok()
-        .and_then(|binary| binary.parent().map(|parent| parent.join("init.zsh")))
+        .and_then(|binary| installation_home(&binary).map(|home| home.join("init.zsh")))
         .map_or_else(
             || ". \"$HOME/.x-cli-jumper/init.zsh\"".to_owned(),
             |init| format!(". {}", shell_quote(&init.display().to_string())),
@@ -966,8 +975,9 @@ mod tests {
 
     #[test]
     fn shell_init_removes_legacy_j_and_wraps_only_jumper() {
-        let init = shell_init(Path::new("/opt/jumper bin/jumper"));
+        let init = shell_init(Path::new("/opt/jumper home/bin/jumper"));
 
+        assert!(init.contains("_jumper_bin_dir='/opt/jumper home/bin'"));
         assert!(init.contains("unalias j"));
         assert!(init.contains("unalias jumper"));
         assert!(init.contains("unfunction j"));
@@ -978,7 +988,7 @@ mod tests {
         assert!(!init.contains("\nfunction j {"));
         assert!(!init.contains("_jumper_dispatch"));
         assert!(!init.contains("for arg in"));
-        assert!(init.contains("command '/opt/jumper bin/jumper' \"$@\""));
+        assert!(init.contains("command '/opt/jumper home/bin/jumper' \"$@\""));
         assert!(init.contains("builtin cd -- \"$destination\""));
         assert!(init.contains("return \"$exit_status\""));
         assert!(init.contains("invalid destination"));
@@ -993,14 +1003,26 @@ mod tests {
     }
 
     #[test]
-    fn installs_shell_init_next_to_binary() {
+    fn installation_home_supports_legacy_and_bin_layouts() {
+        assert_eq!(
+            installation_home(Path::new("/home/alex/.x-cli-jumper/jumper")),
+            Some(Path::new("/home/alex/.x-cli-jumper")),
+        );
+        assert_eq!(
+            installation_home(Path::new("/home/alex/.x-cli-jumper/bin/jumper")),
+            Some(Path::new("/home/alex/.x-cli-jumper")),
+        );
+    }
+
+    #[test]
+    fn installs_shell_init_at_installation_home() {
         let root = temp_root("shell-init");
         let binary = root.join("bin/jumper");
         fs::create_dir_all(binary.parent().expect("binary parent")).expect("create bin dir");
 
         install_shell_init(b"bridge\n", &binary).expect("install shell init");
 
-        let init = binary.parent().expect("binary parent").join("init.zsh");
+        let init = root.join("init.zsh");
         assert_eq!(fs::read(&init).expect("read shell init"), b"bridge\n");
 
         #[cfg(unix)]
@@ -1016,6 +1038,21 @@ mod tests {
                 0o644,
             );
         }
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn reads_update_token_from_installation_home() {
+        let root = temp_root("update-token");
+        let binary = root.join("bin/jumper");
+        fs::create_dir_all(binary.parent().expect("binary parent")).expect("create bin dir");
+        fs::write(root.join("gh-token"), "test-token\n").expect("write token");
+
+        assert_eq!(
+            read_update_token(&binary).expect("read update token"),
+            Some("test-token".to_owned()),
+        );
 
         let _ = fs::remove_dir_all(root);
     }
