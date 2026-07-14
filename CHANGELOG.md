@@ -12,6 +12,9 @@ Tracks real product and release progress.
   idempotent, validate destinations, and refresh during `jumper update`.
 - Added a narrow installer migration for unmarked PATH and `j()` snippets from
   early Jumper installations.
+- Added an explicit `~/.x-cli-jumper` PATH export that can live alongside the
+  other installed CLI tools while the small shell bridge remains separately
+  managed.
 
 ### Fixed
 

@@ -20,7 +20,8 @@ Environment:
   GH_INSTALLER_TOKEN   GitHub token for private repo installs
 
 The installer builds with Cargo, copies the jumper binary and shell bridge into
-the install directory, and adds one managed source line to bash/zsh profiles.
+the install directory, and adds a managed PATH export and source line to
+bash/zsh profiles.
 USAGE
 }
 
@@ -152,10 +153,27 @@ if [ -n "$installer_token" ]; then
     chmod 0600 "$token_file"
 fi
 
+path_export() {
+    escaped_install_dir="$(printf '%s' "$install_dir" | sed 's/[\\"$`]/\\&/g')"
+    if [ "$install_dir" = "$HOME/.x-cli-jumper" ]; then
+        printf 'export PATH="$HOME/.x-cli-jumper:$PATH"\n'
+    else
+        printf 'export PATH="%s:$PATH"\n' "$escaped_install_dir"
+    fi
+}
+
 profile_block() {
     init_file="$install_dir/init.zsh"
     escaped_init_file="$(printf '%s' "$init_file" | sed 's/[\\"$`]/\\&/g')"
     printf '[ -r "%s" ] && . "%s"\n' "$escaped_init_file" "$escaped_init_file"
+}
+
+ensure_path_export() {
+    profile_file="$1"
+    export_line="$(path_export)"
+    if ! grep -Fqx "$export_line" "$profile_file"; then
+        printf '\n%s\n' "$export_line" >> "$profile_file"
+    fi
 }
 
 remove_existing_block() {
@@ -173,7 +191,6 @@ remove_legacy_integration() {
     profile_file="$1"
     cleaned="$tmp/profile-legacy-cleaned"
     awk '
-        $0 == "export PATH=\"$HOME/.x-cli-jumper:$PATH\"" { next }
         $0 == "j() {" {
             first = $0
             second = third = fourth = ""
@@ -202,6 +219,7 @@ update_one_profile() {
     touch "$profile_file"
     remove_legacy_integration "$profile_file"
     remove_existing_block "$profile_file"
+    ensure_path_export "$profile_file"
     {
         printf "\n# >>> x-cli-jumper >>>\n"
         profile_block
