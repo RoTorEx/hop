@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-07-30
+
 ### Changed
 
 - Warn on every non-config command when the configured project tree is stale,
