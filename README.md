@@ -86,12 +86,20 @@ stdout and copies the selected path with `pbcopy`, `wl-copy`, `xclip`, or `xsel`
 `jumper ~` jumps directly to the jumper home directory, `~/.x-cli-jumper`.
 
 `jumper config` scans `$HOME` and creates or updates
-`~/.x-cli-jumper/config.toml`. Existing `active = true` or `active = false`
-values are preserved, and newly discovered projects default to `active = true`.
-Projects are written in alphanumeric path order. Edit `active = false` to hide a
-project from normal `jumper` results. Pass `--root <dir>` to refresh
-from a different scan root. Passing `--root` to normal jump mode still performs
-an ad hoc scan instead of using the config.
+`~/.x-cli-jumper/config.toml`. The config records the scan root, preserves
+existing `active = true` or `active = false` values for projects that are still
+present, adds newly discovered projects as `active = true`, and removes projects
+that are no longer discovered under that root. Projects are written in
+alphanumeric path order. Edit `active = false` to hide a project from normal
+`jumper` results. Pass `--root <dir>` to refresh from a different scan root.
+Passing `--root` to normal jump mode still performs an ad hoc scan instead of
+using the config.
+
+Every non-config command checks whether the configured project tree still
+matches the current folders. If projects were added or removed, jumper prints a
+stderr warning and keeps running; run `jumper config` again to refresh the
+config. If the config uses a custom scan root, the warning prints the matching
+`jumper config --root <dir>` command.
 
 Normal `jumper` jump mode requires the config file. If it is missing, jumper
 prints an alert and exits; run `jumper config` first.

@@ -4,6 +4,12 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Changed
+
+- Warn on every non-config command when the configured project tree is stale,
+  and make `jumper config` record the scan root while removing paths that are no
+  longer discovered there.
+
 ## [0.2.6] - 2026-07-14
 
 ### Changed

@@ -8,7 +8,7 @@ pub const APP_NAME: &str = "jumper";
 pub const CONFIG_DIR_NAME: &str = ".x-cli-jumper";
 pub const CONFIG_FILE_NAME: &str = "config.toml";
 
-const CONFIG_VERSION: u32 = 1;
+const CONFIG_VERSION: u32 = 2;
 
 const SKIP_DIRS: &[&str] = &[
     "node_modules",
@@ -43,6 +43,7 @@ pub struct Sector {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectConfig {
     pub version: u32,
+    pub scan_root: Option<PathBuf>,
     pub projects: Vec<ProjectConfigEntry>,
 }
 
@@ -50,6 +51,19 @@ pub struct ProjectConfig {
 pub struct ProjectConfigEntry {
     pub path: PathBuf,
     pub active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectTreeDiff {
+    pub unconfigured_projects: Vec<PathBuf>,
+    pub stale_projects: Vec<PathBuf>,
+}
+
+impl ProjectTreeDiff {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.unconfigured_projects.is_empty() && self.stale_projects.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,28 +138,47 @@ pub fn write_project_config(path: &Path, config: &ProjectConfig) -> io::Result<(
 #[must_use]
 pub fn merge_project_config(
     existing: Option<ProjectConfig>,
+    scan_root: PathBuf,
     discovered: Vec<PathBuf>,
 ) -> ProjectConfig {
-    let mut projects = BTreeMap::new();
+    let mut active_by_path = BTreeMap::new();
 
     if let Some(existing) = existing {
         for project in existing.projects {
-            projects.insert(project.path, project.active);
+            active_by_path.insert(project.path, project.active);
         }
     }
 
+    let mut projects = BTreeMap::new();
     for path in discovered {
-        projects.entry(path).or_insert(true);
+        let active = active_by_path.get(&path).copied().unwrap_or(true);
+        projects.insert(path, active);
     }
 
     ProjectConfig {
         version: CONFIG_VERSION,
+        scan_root: Some(scan_root),
         projects: sort_project_config_entries(
             projects
                 .into_iter()
                 .map(|(path, active)| ProjectConfigEntry { path, active })
                 .collect(),
         ),
+    }
+}
+
+#[must_use]
+pub fn diff_project_config_tree(config: &ProjectConfig, discovered: &[PathBuf]) -> ProjectTreeDiff {
+    let configured = config
+        .projects
+        .iter()
+        .map(|project| project.path.clone())
+        .collect::<BTreeSet<_>>();
+    let discovered = discovered.iter().cloned().collect::<BTreeSet<_>>();
+
+    ProjectTreeDiff {
+        unconfigured_projects: discovered.difference(&configured).cloned().collect(),
+        stale_projects: configured.difference(&discovered).cloned().collect(),
     }
 }
 
@@ -164,6 +197,7 @@ pub fn active_project_paths(config: &ProjectConfig) -> Vec<PathBuf> {
 
 pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
     let mut version = None;
+    let mut scan_root = None;
     let mut projects = Vec::new();
     let mut current_project: Option<ProjectConfigEntryDraft> = None;
 
@@ -198,6 +232,9 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
             },
             None => match key {
                 "version" => version = Some(parse_config_version(value, line_number)?),
+                "scan_root" => {
+                    scan_root = Some(PathBuf::from(parse_toml_string(value, line_number)?))
+                }
                 _ => return Err(format!("line {line_number}: unknown config key `{key}`")),
             },
         }
@@ -207,19 +244,29 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
         finish_project_config_entry(project, &mut projects, contents.lines().count() + 1)?;
     }
 
-    let version = version.unwrap_or(CONFIG_VERSION);
-    if version != CONFIG_VERSION {
+    let version = version.unwrap_or(1);
+    if !(1..=CONFIG_VERSION).contains(&version) {
         return Err(format!("unsupported config version {version}"));
     }
 
-    Ok(ProjectConfig { version, projects })
+    Ok(ProjectConfig {
+        version,
+        scan_root,
+        projects,
+    })
 }
 
 #[must_use]
 pub fn render_project_config(config: &ProjectConfig) -> String {
     let mut output = String::from(
-        "# jumper project config\n# Set active = false to hide a project.\n\nversion = 1\n",
+        "# jumper project config\n# Set active = false to hide a project.\n# Run jumper config to refresh after adding or removing projects.\n\n",
     );
+    output.push_str(&format!("version = {CONFIG_VERSION}\n"));
+    if let Some(scan_root) = &config.scan_root {
+        output.push_str("scan_root = \"");
+        push_toml_string(&mut output, &scan_root.display().to_string());
+        output.push_str("\"\n");
+    }
 
     let projects = sorted_project_config_entries(&config.projects);
     for project in projects {
@@ -687,7 +734,8 @@ mod tests {
     #[test]
     fn parses_and_renders_project_config() {
         let contents = r#"# jumper project config
-version = 1
+version = 2
+scan_root = "/home/alex"
 
 [[projects]]
 path = "/home/alex/work/jumper"
@@ -703,7 +751,8 @@ active = true # trailing comments are fine
         assert_eq!(
             config,
             ProjectConfig {
-                version: 1,
+                version: 2,
+                scan_root: Some(PathBuf::from("/home/alex")),
                 projects: vec![
                     ProjectConfigEntry {
                         path: PathBuf::from("/home/alex/work/jumper"),
@@ -724,9 +773,32 @@ active = true # trailing comments are fine
     }
 
     #[test]
-    fn merging_project_config_preserves_manual_active_values() {
+    fn parses_legacy_project_config_without_scan_root() {
+        let contents = r#"version = 1
+
+[[projects]]
+path = "/home/alex/work/jumper"
+active = true
+"#;
+
+        let config = parse_project_config(contents).expect("parse legacy config");
+
+        assert_eq!(config.version, 1);
+        assert_eq!(config.scan_root, None);
+        assert_eq!(
+            config.projects,
+            vec![ProjectConfigEntry {
+                path: PathBuf::from("/home/alex/work/jumper"),
+                active: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn merging_project_config_preserves_manual_active_values_and_drops_missing_paths() {
         let existing = ProjectConfig {
             version: 1,
+            scan_root: Some(PathBuf::from("/home/alex")),
             projects: vec![
                 ProjectConfigEntry {
                     path: PathBuf::from("/home/alex/work/jumper"),
@@ -738,20 +810,19 @@ active = true # trailing comments are fine
                 },
             ],
         };
+        let scan_root = PathBuf::from("/home/alex");
         let discovered = vec![
             PathBuf::from("/home/alex/work/jumper"),
             PathBuf::from("/home/alex/work/new-project"),
         ];
 
-        let merged = merge_project_config(Some(existing), discovered);
+        let merged = merge_project_config(Some(existing), scan_root.clone(), discovered);
 
+        assert_eq!(merged.version, 2);
+        assert_eq!(merged.scan_root, Some(scan_root));
         assert_eq!(
             merged.projects,
             vec![
-                ProjectConfigEntry {
-                    path: PathBuf::from("/home/alex/old/project"),
-                    active: true,
-                },
                 ProjectConfigEntry {
                     path: PathBuf::from("/home/alex/work/jumper"),
                     active: false,
@@ -768,6 +839,7 @@ active = true # trailing comments are fine
     fn merging_project_config_sorts_projects_alphanumerically() {
         let existing = ProjectConfig {
             version: 1,
+            scan_root: None,
             projects: vec![ProjectConfigEntry {
                 path: PathBuf::from("/home/alex/work/project-10"),
                 active: false,
@@ -779,7 +851,7 @@ active = true # trailing comments are fine
             PathBuf::from("/home/alex/work/project-10"),
         ];
 
-        let merged = merge_project_config(Some(existing), discovered);
+        let merged = merge_project_config(Some(existing), PathBuf::from("/home/alex"), discovered);
 
         assert_eq!(
             merged
@@ -799,7 +871,8 @@ active = true # trailing comments are fine
     #[test]
     fn render_project_config_sorts_projects_alphanumerically() {
         let config = ProjectConfig {
-            version: 1,
+            version: 2,
+            scan_root: Some(PathBuf::from("/home/alex")),
             projects: vec![
                 ProjectConfigEntry {
                     path: PathBuf::from("/home/alex/work/project-10"),
@@ -836,6 +909,7 @@ active = true # trailing comments are fine
 
         let config = ProjectConfig {
             version: 1,
+            scan_root: None,
             projects: vec![
                 ProjectConfigEntry {
                     path: active.clone(),
@@ -855,6 +929,34 @@ active = true # trailing comments are fine
         assert_eq!(active_project_paths(&config), vec![active]);
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn diffs_project_config_against_discovered_tree() {
+        let configured = PathBuf::from("/home/alex/work/configured");
+        let stale = PathBuf::from("/home/alex/work/stale");
+        let unconfigured = PathBuf::from("/home/alex/work/unconfigured");
+        let config = ProjectConfig {
+            version: 2,
+            scan_root: Some(PathBuf::from("/home/alex")),
+            projects: vec![
+                ProjectConfigEntry {
+                    path: configured.clone(),
+                    active: true,
+                },
+                ProjectConfigEntry {
+                    path: stale.clone(),
+                    active: false,
+                },
+            ],
+        };
+        let discovered = vec![configured, unconfigured.clone()];
+
+        let diff = diff_project_config_tree(&config, &discovered);
+
+        assert_eq!(diff.unconfigured_projects, vec![unconfigured]);
+        assert_eq!(diff.stale_projects, vec![stale]);
+        assert!(!diff.is_empty());
     }
 
     fn temp_root(name: &str) -> PathBuf {

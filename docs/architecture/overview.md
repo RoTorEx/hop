@@ -9,28 +9,34 @@ on developer machines, VMs, and VPS hosts.
    the binary fails with an alert to run `jumper config`.
 2. Passing `--root <dir>` to jump mode performs an explicit ad hoc scan instead
    of using the config.
-3. A directory below a scan root is treated as a project when it contains
+3. Every non-config command compares the configured project tree with the
+   current folders under the config's scan root. If projects were added or
+   removed, it prints a stderr warning and continues; `jumper config` is the
+   repair command.
+4. A directory below a scan root is treated as a project when it contains
    `.git`.
-4. Known noisy directories such as `node_modules`, `target`, virtualenvs, caches,
+5. Known noisy directories such as `node_modules`, `target`, virtualenvs, caches,
    and hidden directories are skipped.
-5. Projects are grouped by their parent folder into lettered sectors.
-6. The interactive UI is written to stderr.
-7. Jump mode writes the selected path as the only stdout output.
-8. The `~` target is a shortcut for the jumper home directory,
+6. Projects are grouped by their parent folder into lettered sectors.
+7. The interactive UI is written to stderr.
+8. Jump mode writes the selected path as the only stdout output.
+9. The `~` target is a shortcut for the jumper home directory,
    `~/.x-cli-jumper`.
-9. Copy mode writes no stdout and sends the selected path to the system
+10. Copy mode writes no stdout and sends the selected path to the system
    clipboard with an available platform clipboard command.
-10. Profile files contain only one integration line:
+11. Profile files contain only one integration line:
     `source "$HOME/.x-cli-jumper/init.zsh"`. The bridge idempotently adds
     `~/.x-cli-jumper/bin` to PATH, calls the absolute installed binary, captures
     its stdout, validates the returned directory, and runs `cd` in the caller
     shell. The Rust CLI owns all argument parsing.
-11. If the raw executable runs from a terminal without the bridge, it reports
+12. If the raw executable runs from a terminal without the bridge, it reports
     that it cannot change its parent shell instead of silently printing a path.
 
 `jumper config` refreshes the config file by scanning `$HOME` or an explicit
-`--root <dir>`, merging newly discovered projects into the existing file, and
-preserving manually edited `active = true` or `active = false` values.
+`--root <dir>`, recording that scan root, preserving manually edited
+`active = true` or `active = false` values for projects that are still present,
+adding newly discovered projects, and removing paths that are no longer
+discovered under that root.
 
 The binary never changes directory itself because child processes cannot change
 the parent shell's working directory; the installed `jumper` shell wrapper

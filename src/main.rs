@@ -7,8 +7,8 @@ use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
 use jumper::{
     APP_NAME, ChoiceParseError, ProjectConfig, Sector, active_project_paths, cli_home_path,
-    config_path, discover_projects, group_projects, load_project_config, merge_project_config,
-    parse_choice, write_project_config,
+    config_path, diff_project_config_tree, discover_projects, group_projects, load_project_config,
+    merge_project_config, parse_choice, write_project_config,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -49,6 +49,10 @@ fn main() -> ExitCode {
         Ok(options) => options,
         Err(message) => return fail(&message, colors_enabled()),
     };
+
+    if options.command != Command::Config {
+        warn_if_project_config_needs_refresh(&options);
+    }
 
     match options.command {
         Command::Help => {
@@ -241,7 +245,7 @@ fn run_config(options: Options) -> ExitCode {
         Ok(existing) => existing,
         Err(message) => return fail(&message, options.color),
     };
-    let config = merge_project_config(existing, projects);
+    let config = merge_project_config(existing, root.clone(), projects);
     let total = config.projects.len();
     let active = config
         .projects
@@ -296,6 +300,112 @@ fn projects_for_jump(
         "Project config not found at {}; run `jumper config` first.",
         path.display()
     ))
+}
+
+fn warn_if_project_config_needs_refresh(options: &Options) {
+    let home = match home_dir() {
+        Ok(home) => home,
+        Err(_) => return,
+    };
+    let path = config_path(&home);
+    let config = match load_project_config(&path) {
+        Ok(config) => config,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            if !uses_default_project_config(options) {
+                config_warning(
+                    &format!(
+                        "Project config not found at {}; run `jumper config`.",
+                        path.display()
+                    ),
+                    options.color,
+                );
+            }
+            return;
+        }
+        Err(error) => {
+            if !uses_default_project_config(options) {
+                config_warning(
+                    &format!(
+                        "Cannot check project config freshness: cannot read {}: {error}.",
+                        path.display()
+                    ),
+                    options.color,
+                );
+            }
+            return;
+        }
+    };
+
+    let scan_root = config.scan_root.as_deref().unwrap_or(&home);
+    let discovered = match discover_projects(scan_root) {
+        Ok(projects) => projects,
+        Err(error) => {
+            config_warning(
+                &format!(
+                    "Cannot check project tree against config: cannot scan {}: {error}. Run {} to refresh it.",
+                    scan_root.display(),
+                    refresh_command(scan_root, &home),
+                ),
+                options.color,
+            );
+            return;
+        }
+    };
+
+    let diff = diff_project_config_tree(&config, &discovered);
+    if diff.is_empty() {
+        return;
+    }
+
+    config_warning(
+        &format!(
+            "Project tree differs from config: {}. Run {} to refresh it.",
+            project_tree_diff_summary(&diff),
+            refresh_command(scan_root, &home),
+        ),
+        options.color,
+    );
+}
+
+fn uses_default_project_config(options: &Options) -> bool {
+    options.command == Command::Jump && options.root.is_none()
+}
+
+fn project_tree_diff_summary(diff: &jumper::ProjectTreeDiff) -> String {
+    let mut parts = Vec::new();
+    let unconfigured = diff.unconfigured_projects.len();
+    let stale = diff.stale_projects.len();
+
+    if unconfigured > 0 {
+        parts.push(format!("{unconfigured} new {}", project_word(unconfigured)));
+    }
+    if stale > 0 {
+        parts.push(format!(
+            "{stale} missing configured {}",
+            project_word(stale)
+        ));
+    }
+
+    match parts.as_slice() {
+        [only] => only.clone(),
+        [first, second] => format!("{first} and {second}"),
+        _ => parts.join(", "),
+    }
+}
+
+fn project_word(count: usize) -> &'static str {
+    if count == 1 { "project" } else { "projects" }
+}
+
+fn refresh_command(scan_root: &Path, home: &Path) -> String {
+    if scan_root == home {
+        "`jumper config`".to_owned()
+    } else {
+        format!(
+            "`jumper config --root {}`",
+            shell_quote(&scan_root.display().to_string())
+        )
+    }
 }
 
 fn load_optional_project_config(path: &Path) -> Result<Option<ProjectConfig>, String> {
@@ -817,6 +927,14 @@ fn warn(message: &str, color: bool) {
     );
 }
 
+fn config_warning(message: &str, color: bool) {
+    eprintln!(
+        "  {} {}",
+        paint(color, YELLOW, "!"),
+        paint(color, YELLOW, message),
+    );
+}
+
 fn paint(color: bool, code: &str, value: &str) -> String {
     if color {
         format!("{code}{value}{RESET}")
@@ -1011,6 +1129,30 @@ mod tests {
         assert_eq!(
             installation_home(Path::new("/home/alex/.x-cli-jumper/bin/jumper")),
             Some(Path::new("/home/alex/.x-cli-jumper")),
+        );
+    }
+
+    #[test]
+    fn summarizes_project_tree_diffs_for_terminal_warning() {
+        let diff = jumper::ProjectTreeDiff {
+            unconfigured_projects: vec![
+                PathBuf::from("/home/alex/work/new-1"),
+                PathBuf::from("/home/alex/work/new-2"),
+            ],
+            stale_projects: vec![PathBuf::from("/home/alex/work/old")],
+        };
+
+        assert_eq!(
+            project_tree_diff_summary(&diff),
+            "2 new projects and 1 missing configured project"
+        );
+        assert_eq!(
+            refresh_command(Path::new("/srv"), Path::new("/home/alex")),
+            "`jumper config --root '/srv'`"
+        );
+        assert_eq!(
+            refresh_command(Path::new("/home/alex"), Path::new("/home/alex")),
+            "`jumper config`"
         );
     }
 
