@@ -295,13 +295,13 @@ pub fn group_projects(scan_root: &Path, projects: Vec<PathBuf>) -> Vec<Sector> {
             .map(|path| display_relative_root(scan_root, path))
             .unwrap_or_else(|| "/".to_owned());
 
-        grouped.entry((sector, above)).or_default().push(project);
+        grouped.entry((above, sector)).or_default().push(project);
     }
 
     grouped
         .into_iter()
         .enumerate()
-        .map(|(index, ((name, above), mut paths))| {
+        .map(|(index, ((above, name), mut paths))| {
             paths.sort();
             Sector {
                 label: label_for_index(index),
@@ -694,11 +694,11 @@ mod tests {
         let sectors = group_projects(&root, projects);
 
         assert_eq!(sectors[0].label, "A");
-        assert_eq!(sectors[0].name, "apps");
-        assert_eq!(sectors[0].above, "~/work/");
+        assert_eq!(sectors[0].name, "labs");
+        assert_eq!(sectors[0].above, "~/");
         assert_eq!(sectors[1].label, "B");
-        assert_eq!(sectors[1].name, "labs");
-        assert_eq!(sectors[1].above, "~/");
+        assert_eq!(sectors[1].name, "apps");
+        assert_eq!(sectors[1].above, "~/work/");
         assert_eq!(sectors[2].label, "C");
         assert_eq!(sectors[2].name, "tools");
         assert_eq!(sectors[2].above, "~/work/");

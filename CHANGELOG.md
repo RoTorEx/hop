@@ -4,6 +4,10 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Changed
+
+- Sort sectors by their full path instead of the parent directory name.
+
 ## [0.2.8] - 2026-08-18
 
 ### Changed
