@@ -4,6 +4,11 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Changed
+
+- Show a trailing slash on the sector location in the project list (for
+  example `(~/Documents/WorkSpace/)`).
+
 ## [0.2.7] - 2026-07-30
 
 ### Changed

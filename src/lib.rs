@@ -645,10 +645,15 @@ fn should_skip_dir(name: &str) -> bool {
 }
 
 fn display_relative_root(scan_root: &Path, path: &Path) -> String {
-    match path.strip_prefix(scan_root) {
+    let display = match path.strip_prefix(scan_root) {
         Ok(relative) if relative.as_os_str().is_empty() => "~".to_owned(),
         Ok(relative) => format!("~/{}", relative.display()),
         Err(_) => path.display().to_string(),
+    };
+    if display.ends_with('/') {
+        display
+    } else {
+        format!("{display}/")
     }
 }
 
@@ -690,13 +695,13 @@ mod tests {
 
         assert_eq!(sectors[0].label, "A");
         assert_eq!(sectors[0].name, "apps");
-        assert_eq!(sectors[0].above, "~/work");
+        assert_eq!(sectors[0].above, "~/work/");
         assert_eq!(sectors[1].label, "B");
         assert_eq!(sectors[1].name, "labs");
-        assert_eq!(sectors[1].above, "~");
+        assert_eq!(sectors[1].above, "~/");
         assert_eq!(sectors[2].label, "C");
         assert_eq!(sectors[2].name, "tools");
-        assert_eq!(sectors[2].above, "~/work");
+        assert_eq!(sectors[2].above, "~/work/");
     }
 
     #[test]
