@@ -34,6 +34,10 @@ read_version() {
 validate_version() {
     version="$1"
 
+    printf '%s\n' "$version" \
+        | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' \
+        || fail "version must be MAJOR.MINOR.PATCH"
+
     old_ifs="$IFS"
     IFS=.
     set -- $version
@@ -44,6 +48,17 @@ validate_version() {
     case "${1:-}" in ''|*[!0-9]*) fail "version must be MAJOR.MINOR.PATCH" ;; esac
     case "${2:-}" in ''|*[!0-9]*) fail "version must be MAJOR.MINOR.PATCH" ;; esac
     case "${3:-}" in ''|*[!0-9]*) fail "version must be MAJOR.MINOR.PATCH" ;; esac
+}
+
+version_is_greater() {
+    awk -v current="$1" -v target="$2" 'BEGIN {
+        split(current, c, "."); split(target, t, ".")
+        for (i = 1; i <= 3; i++) {
+            if (t[i] > c[i]) exit 0
+            if (t[i] < c[i]) exit 1
+        }
+        exit 1
+    }'
 }
 
 apply_release_version() {
@@ -113,6 +128,8 @@ printf "Release version (MAJOR.MINOR.PATCH): "
 read -r target
 [ -n "$target" ] || fail "release version is required"
 validate_version "$target"
+version_is_greater "$current" "$target" \
+    || fail "release version must be greater than current version $current"
 
 tag="v$target"
 if git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then

@@ -4,6 +4,11 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Changed
+
+- Hardened `make release-push` to verify `main` and the current version tag
+  before pushing.
+
 ## [0.2.9] - 2026-08-18
 
 ### Changed
