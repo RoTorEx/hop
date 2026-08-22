@@ -143,3 +143,7 @@ implementation literals as business rules.
   authoritative result. Command success or a log entry alone is not proof.
 - Ask before weakening a documented boundary or performing a release.
 - Do not refactor product code merely to satisfy a shared convention.
+- Treat every temporary file, directory, checkout, build output, browser profile, and process as task-owned unless it pre-existed or was explicitly handed off.
+- Put bulky agent-created scratch, temporary checkouts, build outputs, and reusable caches under `${HOME}/construction_side/<project>/`; use system temp only for small short-lived artifacts with attached cleanup.
+- Before the final response, stop owned processes and remove owned temporary artifacts no longer needed by the user or an active task, so repeated work cannot silently consume disk or preserve stale state.
+- Never keep the only copy of source truth or a user deliverable in `construction_side`, and never delete pre-existing or unowned data. Report the exact path, purpose, owner, and cleanup condition of anything intentionally retained.
