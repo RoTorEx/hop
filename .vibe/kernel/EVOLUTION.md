@@ -125,6 +125,12 @@ history access, and history must never be copied into instructions wholesale.
 
 ## Adoption notes
 
+### 1.3.1
+
+- Before the first tag pushed through a new or materially changed automated
+  publishing workflow, apply the practical preflight and post-push verification
+  added to `RELEASE.md`. No publishing system or unsupported target is required.
+
 ### 1.2.0
 
 - Run `make vibe-pull` once. It adds the managed `vibe-propose` Make target
