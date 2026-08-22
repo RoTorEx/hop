@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-22
+
 ### Changed
 
 - Renamed the project, crate, executable, shell command, installation home,
