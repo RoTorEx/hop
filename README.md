@@ -78,6 +78,7 @@ hop config
 hop -v
 hop A1
 hop --copy-path A1
+hop --view-table
 hop update
 hop --root /srv
 ```
@@ -90,6 +91,10 @@ output, which keeps shell integration safe and predictable. Copy mode writes no
 stdout and copies the selected path with `pbcopy`, `wl-copy`, `xclip`, or `xsel`.
 
 `hop ~` jumps directly to the hop home directory, `~/.x-cli-hop`.
+
+`hop --view-table` keeps the same `A1`, `B2`, and other selectors while showing
+sectors as rows and numbered project positions as columns. The default view is
+unchanged.
 
 `hop config` scans `$HOME` and creates or updates
 `~/.x-cli-hop/config.toml`. The config records the scan root, preserves

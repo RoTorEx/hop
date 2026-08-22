@@ -41,6 +41,7 @@ struct Options {
     root: Option<PathBuf>,
     target: Option<String>,
     copy_path: bool,
+    view_table: bool,
     color: bool,
 }
 
@@ -219,7 +220,11 @@ fn run_jump(options: Options) -> ExitCode {
         return choose_target(&sectors, &target, options.copy_path, options.color);
     }
 
-    render(&sectors, options.color);
+    if options.view_table {
+        render_table(&sectors, options.color);
+    } else {
+        render(&sectors, options.color);
+    }
     prompt_loop(&sectors, options.copy_path, options.color)
 }
 
@@ -809,6 +814,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut root = None;
     let mut target = None;
     let mut copy_path = false;
+    let mut view_table = false;
     let mut color = colors_enabled();
     let mut args = args.peekable();
 
@@ -818,6 +824,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
             "-v" | "-V" | "--version" => command = Command::Version,
             "--shell-init" => command = Command::ShellInit,
             "--copy-path" => copy_path = true,
+            "--view-table" => view_table = true,
             "--no-color" => color = false,
             "--root" => {
                 let Some(value) = args.next() else {
@@ -863,6 +870,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
         root,
         target,
         copy_path,
+        view_table,
         color,
     })
 }
@@ -906,6 +914,102 @@ fn render(sectors: &[Sector], color: bool) {
     }
 
     eprintln!();
+}
+
+fn render_table(sectors: &[Sector], color: bool) {
+    eprintln!();
+    eprintln!(
+        "  {} {} {}",
+        paint(color, YELLOW, "*"),
+        paint(color, BOLD, &title_case(APP_NAME)),
+        paint(color, DIM, &format!("(v{VERSION})")),
+    );
+    eprintln!();
+
+    let column_count = sectors
+        .iter()
+        .map(|sector| sector.paths.len())
+        .max()
+        .unwrap_or(0);
+    let sector_cells = sectors
+        .iter()
+        .map(|sector| format!("{}. {}", sector.label, sector.name))
+        .collect::<Vec<_>>();
+    let mut widths = vec![
+        sector_cells
+            .iter()
+            .map(|cell| display_width(cell))
+            .max()
+            .unwrap_or(0)
+            .max(display_width("Sector")),
+    ];
+
+    for index in 0..column_count {
+        let width = sectors
+            .iter()
+            .filter_map(|sector| sector.paths.get(index))
+            .map(|path| display_width(&project_name(path)))
+            .max()
+            .unwrap_or(0)
+            .max((index + 1).to_string().len());
+        widths.push(width);
+    }
+
+    eprintln!("{}", table_border('┌', '┬', '┐', &widths, color));
+
+    let mut header = vec!["Sector".to_owned()];
+    header.extend((1..=column_count).map(|index| index.to_string()));
+    let mut header_codes = vec![BLUE];
+    header_codes.extend(std::iter::repeat_n(CYAN, column_count));
+    eprintln!("{}", table_row(&header, &widths, &header_codes, color));
+    eprintln!("{}", table_border('├', '┼', '┤', &widths, color));
+
+    for (sector, sector_cell) in sectors.iter().zip(sector_cells) {
+        let mut cells = vec![sector_cell];
+        cells.extend(sector.paths.iter().map(|path| project_name(path)));
+        cells.resize(column_count + 1, String::new());
+
+        let mut codes = vec![BOLD];
+        codes.extend(std::iter::repeat_n(GREEN, column_count));
+        eprintln!("{}", table_row(&cells, &widths, &codes, color));
+    }
+
+    eprintln!("{}", table_border('└', '┴', '┘', &widths, color));
+    eprintln!();
+}
+
+fn project_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("?")
+        .to_owned()
+}
+
+fn display_width(value: &str) -> usize {
+    value.chars().count()
+}
+
+fn table_border(left: char, middle: char, right: char, widths: &[usize], color: bool) -> String {
+    let mut output = format!("  {left}");
+    for (index, width) in widths.iter().enumerate() {
+        output.push_str(&"─".repeat(width + 2));
+        output.push(if index + 1 == widths.len() {
+            right
+        } else {
+            middle
+        });
+    }
+    paint(color, DIM, &output)
+}
+
+fn table_row(values: &[String], widths: &[usize], codes: &[&str], color: bool) -> String {
+    let mut output = String::from("  │");
+    for ((value, width), code) in values.iter().zip(widths).zip(codes) {
+        let padding = " ".repeat(width.saturating_sub(display_width(value)));
+        output.push_str(&paint(color, code, &format!(" {value}{padding} ")));
+        output.push('│');
+    }
+    output
 }
 
 fn read_choice() -> io::Result<String> {
@@ -963,7 +1067,7 @@ fn print_help(color: bool) {
 Tiny interactive project navigator for shells on local machines, VMs, and VPS hosts.
 
 {}:
-    hop [<target>] [--copy-path] [--root <dir>] [--no-color]
+    hop [<target>] [--copy-path] [--view-table] [--root <dir>] [--no-color]
     hop ~
     hop config [--root <dir>]
     hop update
@@ -975,6 +1079,7 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 
 {}:
     --copy-path      Copy the selected path instead of printing it
+    --view-table     Show projects as a numbered table
     --root <dir>      Scan a directory instead of $HOME
     --no-color        Disable ANSI color output
     -v, -V, --version Print version
@@ -1210,6 +1315,24 @@ mod tests {
 
         assert_eq!(options.command, Command::Jump);
         assert_eq!(options.target.as_deref(), Some("b1"));
+    }
+
+    #[test]
+    fn parse_args_accepts_table_view() {
+        let options =
+            parse_args(["--view-table".to_owned()].into_iter()).expect("parse table view");
+
+        assert!(options.view_table);
+        assert_eq!(options.command, Command::Jump);
+    }
+
+    #[test]
+    fn table_rows_align_numbered_project_columns() {
+        let values = vec!["Sector".to_owned(), "1".to_owned(), "2".to_owned()];
+        let widths = vec![8, 5, 8];
+        let row = table_row(&values, &widths, &[BLUE, CYAN, CYAN], false);
+
+        assert_eq!(row, "  │ Sector   │ 1     │ 2        │");
     }
 
     #[test]
