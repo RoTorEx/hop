@@ -4,11 +4,6 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
-### Added
-
-- Added `hop --view-table` as an optional table layout with numbered project
-  columns while preserving the default view and existing selectors.
-
 ## [0.3.0] - 2026-08-22
 
 ### Changed

@@ -31,8 +31,6 @@ on developer machines, VMs, and VPS hosts.
     shell. The Rust CLI owns all argument parsing.
 12. If the raw executable runs from a terminal without the bridge, it reports
     that it cannot change its parent shell instead of silently printing a path.
-13. `--view-table` renders the same sectors as table rows and project positions
-    as numbered columns without changing selector semantics or the default view.
 
 `hop config` refreshes the config file by scanning `$HOME` or an explicit
 `--root <dir>`, recording that scan root, preserving manually edited
