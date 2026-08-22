@@ -3,7 +3,7 @@ set -eu
 
 usage() {
     cat <<'USAGE'
-Run the jumper release flow.
+Run the hop release flow.
 
 Usage:
   make release
@@ -65,7 +65,7 @@ apply_release_version() {
     current="$1"
     target="$2"
     today="$(date +%Y-%m-%d)"
-    tmp="${TMPDIR:-/tmp}/jumper-release-$$"
+    tmp="${TMPDIR:-/tmp}/hop-release-$$"
     mkdir -p "$tmp"
 
     if grep -q "^## \[$target\]" CHANGELOG.md; then
@@ -108,7 +108,7 @@ case "${1:-}" in
         ;;
 esac
 
-trap 'rm -rf "${TMPDIR:-/tmp}/jumper-release-$$"' EXIT HUP INT TERM
+trap 'rm -rf "${TMPDIR:-/tmp}/hop-release-$$"' EXIT HUP INT TERM
 
 branch="$(git rev-parse --abbrev-ref HEAD)"
 [ "$branch" = "main" ] || fail "release must run from main, not $branch"

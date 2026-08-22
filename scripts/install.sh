@@ -1,33 +1,37 @@
 #!/usr/bin/env sh
 set -eu
 
-repo="RoTorEx/jumper"
+repo="RoTorEx/hop"
 ref="main"
-install_dir="${HOME:-}/.x-cli-jumper"
+install_dir="${HOME:-}/.x-cli-hop"
 bin_dir="$install_dir/bin"
 update_profile=1
+source_dir=""
 
 usage() {
     cat <<'USAGE'
-Install jumper from GitHub.
+Install hop from GitHub.
 
 Usage:
   sh scripts/install.sh [--repo owner/name] [--ref ref] [--dir path] [--no-profile]
+  sh scripts/install.sh --source path [--dir path] [--no-profile]
 
 Environment:
-  JUMPER_REPO          GitHub repo, default RoTorEx/jumper
-  JUMPER_REF           branch, tag, or commit, default main
-  JUMPER_INSTALL_DIR   install directory, default ~/.x-cli-jumper
+  HOP_REPO          GitHub repo, default RoTorEx/hop
+  HOP_REF           branch, tag, or commit, default main
+  HOP_INSTALL_DIR   install directory, default ~/.x-cli-hop
   GH_INSTALLER_TOKEN   GitHub token for private repo installs
 
 The installer builds with Cargo, installs the binary under bin/, writes the
 shell bridge, and adds one source line to the active bash/zsh profile.
+
+Use --source to build from an existing local checkout instead of GitHub.
 USAGE
 }
 
-repo="${JUMPER_REPO:-$repo}"
-ref="${JUMPER_REF:-$ref}"
-install_dir="${JUMPER_INSTALL_DIR:-$install_dir}"
+repo="${HOP_REPO:-$repo}"
+ref="${HOP_REF:-$ref}"
+install_dir="${HOP_INSTALL_DIR:-$install_dir}"
 bin_dir="$install_dir/bin"
 installer_token="${GH_INSTALLER_TOKEN:-}"
 
@@ -71,6 +75,18 @@ while [ "$#" -gt 0 ]; do
             bin_dir="$install_dir/bin"
             shift
             ;;
+        --source)
+            if [ "$#" -lt 2 ]; then
+                echo "ERROR: --source requires a value." >&2
+                exit 1
+            fi
+            source_dir="${2:-}"
+            shift 2
+            ;;
+        --source=*)
+            source_dir="${1#--source=}"
+            shift
+            ;;
         --no-profile)
             update_profile=0
             shift
@@ -99,61 +115,70 @@ if ! command -v cargo >/dev/null 2>&1; then
     echo "ERROR: cargo is required. Install Rust from https://rustup.rs and run again." >&2
     exit 1
 fi
-if ! command -v tar >/dev/null 2>&1; then
+if [ -z "$source_dir" ] && ! command -v tar >/dev/null 2>&1; then
     echo "ERROR: tar is required." >&2
     exit 1
 fi
 
-tmp="${TMPDIR:-/tmp}/jumper-install-$$"
+tmp="${TMPDIR:-/tmp}/hop-install-$$"
 archive="$tmp/source.tar.gz"
 mkdir -p "$tmp"
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
-url="https://github.com/$repo/archive/$ref.tar.gz"
-echo "Downloading $url"
-if [ -n "$installer_token" ]; then
-    if ! command -v curl >/dev/null 2>&1; then
-        echo "ERROR: curl is required for authenticated installs." >&2
+if [ -n "$source_dir" ]; then
+    if [ ! -f "$source_dir/Cargo.toml" ]; then
+        echo "ERROR: local source does not contain Cargo.toml: $source_dir" >&2
         exit 1
     fi
-    {
-        printf 'fail\n'
-        printf 'show-error\n'
-        printf 'silent\n'
-        printf 'location\n'
-        printf 'url = "%s"\n' "$url"
-        printf 'output = "%s"\n' "$archive"
-        printf 'header = "Authorization: Bearer %s"\n' "$installer_token"
-    } | curl -K -
-elif command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$archive"
-elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$archive" "$url"
 else
-    echo "ERROR: curl or wget is required." >&2
-    exit 1
+    url="https://github.com/$repo/archive/$ref.tar.gz"
+    echo "Downloading $url"
+    if [ -n "$installer_token" ]; then
+        if ! command -v curl >/dev/null 2>&1; then
+            echo "ERROR: curl is required for authenticated installs." >&2
+            exit 1
+        fi
+        {
+            printf 'fail\n'
+            printf 'show-error\n'
+            printf 'silent\n'
+            printf 'location\n'
+            printf 'url = "%s"\n' "$url"
+            printf 'output = "%s"\n' "$archive"
+            printf 'header = "Authorization: Bearer %s"\n' "$installer_token"
+        } | curl -K -
+    elif command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$url" -o "$archive"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$archive" "$url"
+    else
+        echo "ERROR: curl or wget is required." >&2
+        exit 1
+    fi
+
+    tar -xzf "$archive" -C "$tmp"
+    source_dir="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+    if [ -z "$source_dir" ]; then
+        echo "ERROR: could not unpack source archive." >&2
+        exit 1
+    fi
 fi
 
-tar -xzf "$archive" -C "$tmp"
-source_dir="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-if [ -z "$source_dir" ]; then
-    echo "ERROR: could not unpack source archive." >&2
-    exit 1
-fi
+echo "Building hop"
+build_target_dir="$tmp/target"
+(cd "$source_dir" && CARGO_TARGET_DIR="$build_target_dir" cargo build --release --locked)
+build_binary="$build_target_dir/release/hop"
 
-echo "Building jumper"
-(cd "$source_dir" && cargo build --release --locked)
-
-installed_binary="$bin_dir/jumper"
-legacy_binary="$install_dir/jumper"
+installed_binary="$bin_dir/hop"
+legacy_binary="$install_dir/hop"
 generated_init="$tmp/init.zsh"
-temporary_binary="$bin_dir/.jumper-install-$$"
+temporary_binary="$bin_dir/.hop-install-$$"
 temporary_init="$install_dir/.init.zsh-install-$$"
 
 mkdir -p "$bin_dir"
-JUMPER_SHELL_BINARY="$installed_binary" \
-    "$source_dir/target/release/jumper" --shell-init > "$generated_init"
-cp "$source_dir/target/release/jumper" "$temporary_binary"
+HOP_SHELL_BINARY="$installed_binary" \
+    "$build_binary" --shell-init > "$generated_init"
+cp "$build_binary" "$temporary_binary"
 chmod 0755 "$temporary_binary"
 mv "$temporary_binary" "$installed_binary"
 cp "$generated_init" "$temporary_init"
@@ -170,8 +195,8 @@ fi
 
 legacy_path_export() {
     escaped_install_dir="$(printf '%s' "$install_dir" | sed 's/[\\"$`]/\\&/g')"
-    if [ "$install_dir" = "$HOME/.x-cli-jumper" ]; then
-        printf 'export PATH="$HOME/.x-cli-jumper:$PATH"\n'
+    if [ "$install_dir" = "$HOME/.x-cli-hop" ]; then
+        printf 'export PATH="$HOME/.x-cli-hop:$PATH"\n'
     else
         printf 'export PATH="%s:$PATH"\n' "$escaped_install_dir"
     fi
@@ -179,8 +204,8 @@ legacy_path_export() {
 
 legacy_bin_path_export() {
     escaped_bin_dir="$(printf '%s' "$bin_dir" | sed 's/[\\"$`]/\\&/g')"
-    if [ "$bin_dir" = "$HOME/.x-cli-jumper/bin" ]; then
-        printf 'export PATH="$HOME/.x-cli-jumper/bin:$PATH"\n'
+    if [ "$bin_dir" = "$HOME/.x-cli-hop/bin" ]; then
+        printf 'export PATH="$HOME/.x-cli-hop/bin:$PATH"\n'
     else
         printf 'export PATH="%s:$PATH"\n' "$escaped_bin_dir"
     fi
@@ -189,8 +214,8 @@ legacy_bin_path_export() {
 profile_source() {
     init_file="$install_dir/init.zsh"
     escaped_init_file="$(printf '%s' "$init_file" | sed 's/[\\"$`]/\\&/g')"
-    if [ "$init_file" = "$HOME/.x-cli-jumper/init.zsh" ]; then
-        printf 'source "$HOME/.x-cli-jumper/init.zsh"\n'
+    if [ "$init_file" = "$HOME/.x-cli-hop/init.zsh" ]; then
+        printf 'source "$HOME/.x-cli-hop/init.zsh"\n'
     else
         printf 'source "%s"\n' "$escaped_init_file"
     fi
@@ -214,8 +239,8 @@ remove_existing_block() {
     profile_file="$1"
     cleaned="$tmp/profile-cleaned"
     awk '
-        $0 == "# >>> x-cli-jumper >>>" { skip = 1; next }
-        $0 == "# <<< x-cli-jumper <<<" { skip = 0; next }
+        $0 == "# >>> x-cli-hop >>>" { skip = 1; next }
+        $0 == "# <<< x-cli-hop <<<" { skip = 0; next }
         skip != 1 { print }
     ' "$profile_file" > "$cleaned"
     cat "$cleaned" > "$profile_file"
@@ -231,7 +256,7 @@ remove_legacy_integration() {
         -v old_source_line="$old_source_line" \
         -v old_path_line="$old_path_line" \
         -v old_bin_path_line="$old_bin_path_line" '
-        $0 == "# x-cli-jumper" { next }
+        $0 == "# x-cli-hop" { next }
         $0 == old_source_line { next }
         $0 == old_path_line { next }
         $0 == old_bin_path_line { next }
@@ -242,7 +267,7 @@ remove_legacy_integration() {
                 (getline third) > 0 &&
                 (getline fourth) > 0 &&
                 second == "    local d" &&
-                third == "    d=\"$(jumper \"$@\")\" && [ -n \"$d\" ] && cd \"$d\"" &&
+                third == "    d=\"$(hop \"$@\")\" && [ -n \"$d\" ] && cd \"$d\"" &&
                 fourth == "}") {
                 next
             }

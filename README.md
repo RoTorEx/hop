@@ -1,4 +1,4 @@
-# jumper
+# Hop
 
 Tiny interactive project navigator for shells on local machines, VMs, and VPS
 hosts. It scans for Git projects, lets you pick one, and prints only the chosen
@@ -17,96 +17,102 @@ Run locally:
 make run
 ```
 
+Build and install the current checkout on this machine:
+
+```bash
+make install-local
+```
+
 Install from GitHub on a VM/VPS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/RoTorEx/hop/main/scripts/install.sh | sh
 ```
 
 If the source repository requires GitHub authentication, pass the installer
 token as `GH_INSTALLER_TOKEN`:
 
 ```bash
-GH_INSTALLER_TOKEN="$(gh auth token)" sh -c 'curl -fsSL -H "Authorization: Bearer $GH_INSTALLER_TOKEN" https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install.sh | GH_INSTALLER_TOKEN="$GH_INSTALLER_TOKEN" sh'
+GH_INSTALLER_TOKEN="$(gh auth token)" sh -c 'curl -fsSL -H "Authorization: Bearer $GH_INSTALLER_TOKEN" https://raw.githubusercontent.com/RoTorEx/hop/main/scripts/install.sh | GH_INSTALLER_TOKEN="$GH_INSTALLER_TOKEN" sh'
 ```
 
 Pin a release or branch:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/RoTorEx/jumper/main/scripts/install.sh | sh -s -- --ref vX.Y.Z
+curl -fsSL https://raw.githubusercontent.com/RoTorEx/hop/main/scripts/install.sh | sh -s -- --ref vX.Y.Z
 ```
 
 The installer builds with Cargo, copies the binary to
-`~/.x-cli-jumper/bin/jumper`, writes the shell bridge to
-`~/.x-cli-jumper/init.zsh`, stores a supplied private repo update token at
-`~/.x-cli-jumper/gh-token` with file mode `0600`, and adds one plain line to the
+`~/.x-cli-hop/bin/hop`, writes the shell bridge to
+`~/.x-cli-hop/init.zsh`, stores a supplied private repo update token at
+`~/.x-cli-hop/gh-token` with file mode `0600`, and adds one plain line to the
 active bash/zsh profile:
 
 ```bash
-source "$HOME/.x-cli-jumper/init.zsh"
+source "$HOME/.x-cli-hop/init.zsh"
 ```
 
 The bridge is required because a child process cannot change its parent shell's
-working directory. It adds `~/.x-cli-jumper/bin` to PATH without duplicates,
+working directory. It adds `~/.x-cli-hop/bin` to PATH without duplicates,
 delegates all argument parsing to the Rust CLI, uses the absolute installed
 binary path, validates the selected directory, and contains the only `cd`
-needed by the integration. `jumper update` refreshes both the binary and this
+needed by the integration. `hop update` refreshes both the binary and this
 bridge.
 
 Open a new shell or source your profile, then run:
 
 ```bash
-jumper
-jumper ~
-jumper A1
-jumper b1
-jumper --copy-path A1
+hop
+hop ~
+hop A1
+hop b1
+hop --copy-path A1
 ```
 
 ## Usage
 
 ```bash
-jumper --help
-jumper ~
-jumper config
-jumper -v
-jumper A1
-jumper --copy-path A1
-jumper update
-jumper --root /srv
+hop --help
+hop ~
+hop config
+hop -v
+hop A1
+hop --copy-path A1
+hop update
+hop --root /srv
 ```
 
 Interactive UI, help, and version output are written to stderr. The installed
-shell integration makes `jumper` change the current shell directory in jump
-mode. Sector labels are case-insensitive, so `jumper B1` and `jumper b1` are
+shell integration makes `hop` change the current shell directory in jump
+mode. Sector labels are case-insensitive, so `hop B1` and `hop b1` are
 equivalent. The underlying binary prints the selected path as its only stdout
 output, which keeps shell integration safe and predictable. Copy mode writes no
 stdout and copies the selected path with `pbcopy`, `wl-copy`, `xclip`, or `xsel`.
 
-`jumper ~` jumps directly to the jumper home directory, `~/.x-cli-jumper`.
+`hop ~` jumps directly to the hop home directory, `~/.x-cli-hop`.
 
-`jumper config` scans `$HOME` and creates or updates
-`~/.x-cli-jumper/config.toml`. The config records the scan root, preserves
+`hop config` scans `$HOME` and creates or updates
+`~/.x-cli-hop/config.toml`. The config records the scan root, preserves
 existing `active = true` or `active = false` values for projects that are still
 present, adds newly discovered projects as `active = true`, and removes projects
 that are no longer discovered under that root. Projects are written in
 alphanumeric path order. Edit `active = false` to hide a project from normal
-`jumper` results. Pass `--root <dir>` to refresh from a different scan root.
+`hop` results. Pass `--root <dir>` to refresh from a different scan root.
 Passing `--root` to normal jump mode still performs an ad hoc scan instead of
 using the config.
 
 Every non-config command checks whether the configured project tree still
-matches the current folders. If projects were added or removed, jumper prints a
-stderr warning and keeps running; run `jumper config` again to refresh the
+matches the current folders. If projects were added or removed, hop prints a
+stderr warning and keeps running; run `hop config` again to refresh the
 config. If the config uses a custom scan root, the warning prints the matching
-`jumper config --root <dir>` command.
+`hop config --root <dir>` command.
 
-Normal `jumper` jump mode requires the config file. If it is missing, jumper
-prints an alert and exits; run `jumper config` first.
+Normal `hop` jump mode requires the config file. If it is missing, hop
+prints an alert and exits; run `hop config` first.
 
-`jumper update` replaces `~/.x-cli-jumper/bin/jumper` and refreshes `init.zsh`
+`hop update` replaces `~/.x-cli-hop/bin/hop` and refreshes `init.zsh`
 from the latest Linux or macOS release for the current CPU architecture. It
-requires `curl` or `wget`, plus `tar`. If `~/.x-cli-jumper/gh-token` exists,
+requires `curl` or `wget`, plus `tar`. If `~/.x-cli-hop/gh-token` exists,
 updates use that token for GitHub authentication.
 
 ## Release Flow

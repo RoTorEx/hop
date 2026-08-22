@@ -1,4 +1,4 @@
-.PHONY: install deps-update cargo-target-dir build typecheck lint fmt test check run version release release-tag release-push vibe-kernel-set vibe-kernel-path vibe-pull
+.PHONY: install install-local deps-update cargo-target-dir build typecheck lint fmt test check run version release release-tag release-push vibe-kernel-set vibe-kernel-path vibe-pull
 
 PROJECT_NAME := $(notdir $(CURDIR))
 CONSTRUCTION_SIDE := $(HOME)/construction_side
@@ -7,6 +7,9 @@ export CARGO_TARGET_DIR
 
 install:
 	cargo fetch --locked
+
+install-local:
+	scripts/install.sh --source "$(CURDIR)"
 
 deps-update:
 	cargo update

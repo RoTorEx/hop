@@ -1,10 +1,10 @@
 [package]
-name = "jumper"
+name = "hop"
 version = "0.2.9"
 edition = "2024"
 rust-version = "1.85"
 description = "Tiny interactive project navigator for shells on local machines, VMs, and VPS hosts."
-repository = "https://github.com/RoTorEx/jumper"
+repository = "https://github.com/RoTorEx/hop"
 publish = false
 
 [profile.release]

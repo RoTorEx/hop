@@ -6,6 +6,9 @@ Tracks real product and release progress.
 
 ### Changed
 
+- Renamed the project, crate, executable, shell command, installation home,
+  environment variables, repository links, and release artifacts to Hop.
+- Added `make install-local` for installing a verified local checkout.
 - Hardened `make release-push` to verify `main` and the current version tag
   before pushing.
 
@@ -27,7 +30,7 @@ Tracks real product and release progress.
 ### Changed
 
 - Warn on every non-config command when the configured project tree is stale,
-  and make `jumper config` record the scan root while removing paths that are no
+  and make `hop config` record the scan root while removing paths that are no
   longer discovered there.
 
 ## [0.2.6] - 2026-07-14
@@ -36,7 +39,7 @@ Tracks real product and release progress.
 
 - Reduced shell profile setup to one ordinary source line; the sourced bridge
   now owns idempotent PATH setup and same-shell directory changes.
-- Moved the installed executable to `~/.x-cli-jumper/bin/jumper` and added a
+- Moved the installed executable to `~/.x-cli-hop/bin/hop` and added a
   migration that removes only known legacy profile entries and the old
   root-level binary while preserving config, tokens, and caches.
 - Updated self-update path discovery to support both the legacy root-level
@@ -51,10 +54,10 @@ Tracks real product and release progress.
 - Reduced managed shell profile integration to one sourced bridge file and
   moved all CLI argument handling back into the Rust executable.
 - Made the shell bridge call the absolute installed binary, keep PATH updates
-  idempotent, validate destinations, and refresh during `jumper update`.
+  idempotent, validate destinations, and refresh during `hop update`.
 - Added a narrow installer migration for unmarked PATH and `j()` snippets from
-  early Jumper installations.
-- Added an explicit `~/.x-cli-jumper` PATH export that can live alongside the
+  early Hop installations.
+- Added an explicit `~/.x-cli-hop` PATH export that can live alongside the
   other installed CLI tools while the small shell bridge remains separately
   managed.
 
@@ -67,14 +70,14 @@ Tracks real product and release progress.
 
 ### Changed
 
-- Removed the `j` shorthand and made `jumper` the only installed shell command.
+- Removed the `j` shorthand and made `hop` the only installed shell command.
   New shell integration removes legacy `j` aliases and functions.
 
 ## [0.2.3] - 2026-07-12
 
 ### Fixed
 
-- Made both installed shell commands, `j` and `jumper`, change the current
+- Made both installed shell commands, `j` and `hop`, change the current
   directory in jump mode while preserving direct dispatch for CLI commands.
 - Preserved successful exit status for shell-wrapped modes that intentionally
   produce no destination path.
@@ -83,28 +86,28 @@ Tracks real product and release progress.
 
 ### Added
 
-- Added macOS x86_64 and aarch64 release artifacts and `jumper update` support.
+- Added macOS x86_64 and aarch64 release artifacts and `hop update` support.
 
 ## [0.2.1] - 2026-06-17
 
 ### Fixed
 
-- Fixed generated shell integration so stale `jumper()` shell functions and
-  `j` aliases from older installs no longer intercept `jumper config` or
+- Fixed generated shell integration so stale `hop()` shell functions and
+  `j` aliases from older installs no longer intercept `hop config` or
   wrapped `j` commands.
 
 ## [0.2.0] - 2026-06-14
 
 ### Added
 
-- Added `jumper config` to maintain `~/.x-cli-jumper/config.toml` and let users
+- Added `hop config` to maintain `~/.x-cli-hop/config.toml` and let users
   hide projects by editing `active = false`.
-- Added `jumper ~` as a shortcut to the jumper home directory.
+- Added `hop ~` as a shortcut to the hop home directory.
 
 ### Changed
 
 - Config projects are now written in alphanumeric path order.
-- Normal jump mode now requires `~/.x-cli-jumper/config.toml` instead of
+- Normal jump mode now requires `~/.x-cli-hop/config.toml` instead of
   falling back to a full `$HOME` scan.
 
 ## [0.1.5] - 2026-05-22
@@ -112,7 +115,7 @@ Tracks real product and release progress.
 ### Added
 
 - Added `GH_INSTALLER_TOKEN` support for authenticated installs and token-backed
-  `jumper update` downloads.
+  `hop update` downloads.
 
 ## [0.1.4] - 2026-05-21
 
@@ -143,7 +146,7 @@ Tracks real product and release progress.
 
 ### Added
 
-- Added `jumper update` to update the current executable from the latest GitHub
+- Added `hop update` to update the current executable from the latest GitHub
   release.
 - Added Linux aarch64 release binaries for updater support on ARM hosts.
 
@@ -151,7 +154,7 @@ Tracks real product and release progress.
 
 ### Added
 
-- Added direct target selection with `jumper <target>` and shell wrapper support
+- Added direct target selection with `hop <target>` and shell wrapper support
   for `j <target>`.
 - Added `--copy-path` to copy the selected project path instead of jumping.
 
@@ -160,6 +163,6 @@ Tracks real product and release progress.
 ### Added
 
 - Packaged the raw navigator as a Cargo-based Rust CLI.
-- Added a GitHub installer that builds from source into `~/.x-cli-jumper`.
+- Added a GitHub installer that builds from source into `~/.x-cli-hop`.
 - Added release bump, tag, publish, and GitHub Actions binary build workflow.
 - Added a plain one-command release flow that follows the project release rules.

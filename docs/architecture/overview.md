@@ -1,17 +1,17 @@
-# jumper Architecture
+# Hop Architecture
 
-`jumper` is a local-first shell companion for quickly moving between Git projects
+`hop` is a local-first shell companion for quickly moving between Git projects
 on developer machines, VMs, and VPS hosts.
 
 ## Runtime Flow
 
-1. Normal jump mode requires `~/.x-cli-jumper/config.toml`; when it is missing,
-   the binary fails with an alert to run `jumper config`.
+1. Normal jump mode requires `~/.x-cli-hop/config.toml`; when it is missing,
+   the binary fails with an alert to run `hop config`.
 2. Passing `--root <dir>` to jump mode performs an explicit ad hoc scan instead
    of using the config.
 3. Every non-config command compares the configured project tree with the
    current folders under the config's scan root. If projects were added or
-   removed, it prints a stderr warning and continues; `jumper config` is the
+   removed, it prints a stderr warning and continues; `hop config` is the
    repair command.
 4. A directory below a scan root is treated as a project when it contains
    `.git`.
@@ -20,47 +20,49 @@ on developer machines, VMs, and VPS hosts.
 6. Projects are grouped by their parent folder into lettered sectors.
 7. The interactive UI is written to stderr.
 8. Jump mode writes the selected path as the only stdout output.
-9. The `~` target is a shortcut for the jumper home directory,
-   `~/.x-cli-jumper`.
+9. The `~` target is a shortcut for the hop home directory,
+   `~/.x-cli-hop`.
 10. Copy mode writes no stdout and sends the selected path to the system
    clipboard with an available platform clipboard command.
 11. Profile files contain only one integration line:
-    `source "$HOME/.x-cli-jumper/init.zsh"`. The bridge idempotently adds
-    `~/.x-cli-jumper/bin` to PATH, calls the absolute installed binary, captures
+    `source "$HOME/.x-cli-hop/init.zsh"`. The bridge idempotently adds
+    `~/.x-cli-hop/bin` to PATH, calls the absolute installed binary, captures
     its stdout, validates the returned directory, and runs `cd` in the caller
     shell. The Rust CLI owns all argument parsing.
 12. If the raw executable runs from a terminal without the bridge, it reports
     that it cannot change its parent shell instead of silently printing a path.
 
-`jumper config` refreshes the config file by scanning `$HOME` or an explicit
+`hop config` refreshes the config file by scanning `$HOME` or an explicit
 `--root <dir>`, recording that scan root, preserving manually edited
 `active = true` or `active = false` values for projects that are still present,
 adding newly discovered projects, and removing paths that are no longer
 discovered under that root.
 
 The binary never changes directory itself because child processes cannot change
-the parent shell's working directory; the installed `jumper` shell wrapper
+the parent shell's working directory; the installed `hop` shell wrapper
 provides that behavior.
 
 ## Boundaries
 
 - The CLI reads local directory metadata only.
-- `jumper config` writes local project selection state to
-  `~/.x-cli-jumper/config.toml`.
+- `hop config` writes local project selection state to
+  `~/.x-cli-hop/config.toml`.
 - The CLI does not write logs or telemetry. `--copy-path` explicitly writes the
   selected path to the system clipboard.
 - Network access is limited to the optional installer, GitHub release flow, and
-  explicit `jumper update` command.
-- Installation writes one binary to `~/.x-cli-jumper/bin/jumper`, writes the
-  shell bridge to `~/.x-cli-jumper/init.zsh`, and updates only the active
+  explicit `hop update` command.
+- Installation writes one binary to `~/.x-cli-hop/bin/hop`, writes the
+  shell bridge to `~/.x-cli-hop/init.zsh`, and updates only the active
   bash/zsh profile with one idempotent source line. Unsupported shells are left
   unchanged. The installer removes the known root-level binary and legacy
-  Jumper profile entries without touching config, tokens, or caches.
+  Hop profile entries without touching config, tokens, or caches.
+- `make install-local` installs the current checkout through the same installer
+  path without downloading a GitHub source archive.
 - For authenticated GitHub installs, the installer reads `GH_INSTALLER_TOKEN`
-  and stores it at `~/.x-cli-jumper/gh-token` with mode `0600` for later
+  and stores it at `~/.x-cli-hop/gh-token` with mode `0600` for later
   updates.
-- `jumper update` downloads the latest matching release archive from GitHub
-  Releases, using `~/.x-cli-jumper/gh-token` when present, and refreshes the
+- `hop update` downloads the latest matching release archive from GitHub
+  Releases, using `~/.x-cli-hop/gh-token` when present, and refreshes the
   current executable and root-level generated shell bridge through atomic file
   replacements. The updater recognizes both legacy root-level and `bin/`
   executable layouts.

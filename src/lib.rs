@@ -4,8 +4,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub const APP_NAME: &str = "jumper";
-pub const CONFIG_DIR_NAME: &str = ".x-cli-jumper";
+pub const APP_NAME: &str = "hop";
+pub const CONFIG_DIR_NAME: &str = ".x-cli-hop";
 pub const CONFIG_FILE_NAME: &str = "config.toml";
 
 const CONFIG_VERSION: u32 = 2;
@@ -259,7 +259,7 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
 #[must_use]
 pub fn render_project_config(config: &ProjectConfig) -> String {
     let mut output = String::from(
-        "# jumper project config\n# Set active = false to hide a project.\n# Run jumper config to refresh after adding or removing projects.\n\n",
+        "# hop project config\n# Set active = false to hide a project.\n# Run hop config to refresh after adding or removing projects.\n\n",
     );
     output.push_str(&format!("version = {CONFIG_VERSION}\n"));
     if let Some(scan_root) = &config.scan_root {
@@ -665,7 +665,7 @@ mod tests {
     #[test]
     fn scans_git_projects_and_skips_noise() {
         let root = temp_root("scan");
-        let project = root.join("work/apps/jumper");
+        let project = root.join("work/apps/hop");
         let nested = project.join("nested/ignored");
         let skipped = root.join("node_modules/package");
         let hidden = root.join(".config/project");
@@ -686,7 +686,7 @@ mod tests {
     fn groups_projects_by_parent_sector() {
         let root = PathBuf::from("/home/alex");
         let projects = vec![
-            root.join("work/apps/jumper"),
+            root.join("work/apps/hop"),
             root.join("work/tools/runner"),
             root.join("labs/playground"),
         ];
@@ -738,12 +738,12 @@ mod tests {
 
     #[test]
     fn parses_and_renders_project_config() {
-        let contents = r#"# jumper project config
+        let contents = r#"# hop project config
 version = 2
 scan_root = "/home/alex"
 
 [[projects]]
-path = "/home/alex/work/jumper"
+path = "/home/alex/work/hop"
 active = false
 
 [[projects]]
@@ -760,7 +760,7 @@ active = true # trailing comments are fine
                 scan_root: Some(PathBuf::from("/home/alex")),
                 projects: vec![
                     ProjectConfigEntry {
-                        path: PathBuf::from("/home/alex/work/jumper"),
+                        path: PathBuf::from("/home/alex/work/hop"),
                         active: false,
                     },
                     ProjectConfigEntry {
@@ -782,7 +782,7 @@ active = true # trailing comments are fine
         let contents = r#"version = 1
 
 [[projects]]
-path = "/home/alex/work/jumper"
+path = "/home/alex/work/hop"
 active = true
 "#;
 
@@ -793,7 +793,7 @@ active = true
         assert_eq!(
             config.projects,
             vec![ProjectConfigEntry {
-                path: PathBuf::from("/home/alex/work/jumper"),
+                path: PathBuf::from("/home/alex/work/hop"),
                 active: true,
             }]
         );
@@ -806,7 +806,7 @@ active = true
             scan_root: Some(PathBuf::from("/home/alex")),
             projects: vec![
                 ProjectConfigEntry {
-                    path: PathBuf::from("/home/alex/work/jumper"),
+                    path: PathBuf::from("/home/alex/work/hop"),
                     active: false,
                 },
                 ProjectConfigEntry {
@@ -817,7 +817,7 @@ active = true
         };
         let scan_root = PathBuf::from("/home/alex");
         let discovered = vec![
-            PathBuf::from("/home/alex/work/jumper"),
+            PathBuf::from("/home/alex/work/hop"),
             PathBuf::from("/home/alex/work/new-project"),
         ];
 
@@ -829,7 +829,7 @@ active = true
             merged.projects,
             vec![
                 ProjectConfigEntry {
-                    path: PathBuf::from("/home/alex/work/jumper"),
+                    path: PathBuf::from("/home/alex/work/hop"),
                     active: false,
                 },
                 ProjectConfigEntry {
@@ -969,6 +969,6 @@ active = true
             .duration_since(UNIX_EPOCH)
             .expect("time went backwards")
             .as_nanos();
-        std::env::temp_dir().join(format!("jumper-{name}-{}-{nanos}", std::process::id()))
+        std::env::temp_dir().join(format!("hop-{name}-{}-{nanos}", std::process::id()))
     }
 }
