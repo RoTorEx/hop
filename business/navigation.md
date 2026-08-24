@@ -7,11 +7,15 @@ by their full parent paths and labeled `A` through `Z`, then `AA`, `AB`, and so
 on. Projects inside a sector are ordered by path. A selector combines the
 sector label and one-based position, for example `B2`.
 
+`hop list` renders this same view and exits successfully without prompting for
+a selection. It does not select a project or record a jump.
+
 ## Frequent view
 
 `--frequent` presents one flat list because retaining directory sectors would
 prevent a true global frequency ordering. Positions are one-based plain numbers
 (`1`, `2`, and so on); sector letters are intentionally absent in this view.
+`hop list --frequent` renders this same ranked view without prompting.
 
 All active projects remain visible. Projects are ordered by descending
 successful jump count. Equal counts are resolved by alphanumeric full-path

@@ -4,6 +4,11 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Added
+
+- Added `hop list` and `hop list --frequent` for printing either project view
+  without entering interactive selection mode.
+
 ## [0.3.1] - 2026-08-24
 
 ### Added

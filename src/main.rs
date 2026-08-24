@@ -29,6 +29,7 @@ const GRAY: &str = "\x1b[90m";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Command {
     Jump,
+    List,
     Help,
     Version,
     ShellInit,
@@ -82,6 +83,7 @@ fn main() -> ExitCode {
         Command::Config => run_config(options),
         Command::RecordJump => run_record_jump(options),
         Command::Jump => run_jump(options),
+        Command::List => run_list(options),
     }
 }
 
@@ -190,6 +192,14 @@ fn run_update(color: bool) -> ExitCode {
 }
 
 fn run_jump(options: Options) -> ExitCode {
+    run_navigation(options, true)
+}
+
+fn run_list(options: Options) -> ExitCode {
+    run_navigation(options, false)
+}
+
+fn run_navigation(options: Options, interactive: bool) -> ExitCode {
     if let Some(target) = options.target.as_deref() {
         match cli_home_shortcut_path(target) {
             Ok(Some(path)) => return emit_path(&path, options.copy_path, options.color),
@@ -229,7 +239,11 @@ fn run_jump(options: Options) -> ExitCode {
         }
 
         render_frequent(&root, &ranked, options.color);
-        return frequent_prompt_loop(&ranked, options.copy_path, options.color);
+        return if interactive {
+            frequent_prompt_loop(&ranked, options.copy_path, options.color)
+        } else {
+            ExitCode::SUCCESS
+        };
     }
 
     let sectors = group_projects(&root, projects);
@@ -239,7 +253,11 @@ fn run_jump(options: Options) -> ExitCode {
     }
 
     render(&sectors, options.color);
-    prompt_loop(&sectors, options.copy_path, options.color)
+    if interactive {
+        prompt_loop(&sectors, options.copy_path, options.color)
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 fn run_record_jump(options: Options) -> ExitCode {
@@ -409,7 +427,7 @@ fn warn_if_project_config_needs_refresh(options: &Options) {
 }
 
 fn uses_default_project_config(options: &Options) -> bool {
-    options.command == Command::Jump && options.root.is_none()
+    matches!(options.command, Command::Jump | Command::List) && options.root.is_none()
 }
 
 fn project_tree_diff_summary(diff: &hop::ProjectTreeDiff) -> String {
@@ -968,6 +986,12 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
                 }
                 command = Command::Config;
             }
+            "list" if target.is_none() => {
+                if command != Command::Jump {
+                    return Err(format!("unexpected argument: {arg}"));
+                }
+                command = Command::List;
+            }
             "update" if target.is_none() => {
                 if command != Command::Jump {
                     return Err(format!("unexpected argument: {arg}"));
@@ -977,7 +1001,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
             _ => {
                 if matches!(
                     command,
-                    Command::Update | Command::Config | Command::RecordJump
+                    Command::List | Command::Update | Command::Config | Command::RecordJump
                 ) {
                     return Err(format!("unexpected argument: {arg}"));
                 }
@@ -1162,12 +1186,14 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 
 {}:
     hop [<target>] [--copy-path] [--frequent] [--root <dir>] [--no-color]
+    hop list [--frequent] [--root <dir>] [--no-color]
     hop ~
     hop config [--root <dir>]
     hop update
     hop --version
 
 {}:
+    list             Print the project list without prompting for a selection
     config           Create or update the project config
     update           Update this executable from the latest GitHub release
 
@@ -1179,11 +1205,11 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
     -v, -V, --version Print version
     -h, --help        Print help
 
-The interactive UI writes to stderr. Jump mode prints only the selected project
-path to stdout, so a shell wrapper can safely cd into it. Target ~ prints the
-hop home directory. Copy mode writes no stdout and copies the selected
-project path to the clipboard. Frequent mode uses numeric positions instead
-of sector labels.",
+The project UI writes to stderr. List mode prints it without prompting for a
+selection. Jump mode prints only the selected project path to stdout, so a
+shell wrapper can safely cd into it. Target ~ prints the hop home directory.
+Copy mode writes no stdout and copies the selected project path to the
+clipboard. Frequent mode uses numeric positions instead of sector labels.",
         paint(color, BOLD, &title_case(APP_NAME)),
         paint(color, DIM, &format!("v{VERSION}")),
         paint(color, BLUE, "USAGE"),
@@ -1424,6 +1450,30 @@ mod tests {
         assert_eq!(options.command, Command::Jump);
         assert!(options.frequent);
         assert_eq!(options.target.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn parse_args_accepts_non_interactive_list_views() {
+        let options = parse_args(["list".to_owned()].into_iter()).expect("parse list");
+
+        assert_eq!(options.command, Command::List);
+        assert!(!options.frequent);
+        assert_eq!(options.target, None);
+
+        let options = parse_args(["list".to_owned(), "--frequent".to_owned()].into_iter())
+            .expect("parse frequent list");
+
+        assert_eq!(options.command, Command::List);
+        assert!(options.frequent);
+        assert_eq!(options.target, None);
+    }
+
+    #[test]
+    fn parse_args_rejects_a_target_for_list() {
+        let error = parse_args(["list".to_owned(), "A1".to_owned()].into_iter())
+            .expect_err("list target should fail");
+
+        assert_eq!(error, "unexpected argument: A1");
     }
 
     #[test]

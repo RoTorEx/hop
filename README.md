@@ -78,6 +78,8 @@ hop config
 hop -v
 hop A1
 hop --copy-path A1
+hop list
+hop list --frequent
 hop --frequent
 hop --frequent 1
 hop update
@@ -90,6 +92,10 @@ mode. Sector labels are case-insensitive, so `hop B1` and `hop b1` are
 equivalent. The underlying binary prints the selected path as its only stdout
 output, which keeps shell integration safe and predictable. Copy mode writes no
 stdout and copies the selected path with `pbcopy`, `wl-copy`, `xclip`, or `xsel`.
+
+`hop list` prints the same grouped project view as `hop` and exits without an
+interactive prompt. Add `--frequent` to print the same ranked view as
+`hop --frequent`. List mode does not select a project or change directories.
 
 `hop ~` jumps directly to the hop home directory, `~/.x-cli-hop`.
 

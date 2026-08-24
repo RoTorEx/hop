@@ -38,6 +38,9 @@ on developer machines, VMs, and VPS hosts.
     internal recorder. The recorder atomically updates
     `~/.x-cli-hop/history.toml`; copy mode, failed changes, and `hop ~` do not
     record a jump.
+15. `list` renders the default grouped view, or the ranked view when combined
+    with `--frequent`, and exits without reading a selection or writing a path
+    to stdout.
 
 `hop config` refreshes the config file by scanning `$HOME` or an explicit
 `--root <dir>`, recording that scan root, preserving manually edited
