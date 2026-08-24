@@ -4,6 +4,13 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Added
+
+- Added `hop --frequent` with a flat numeric project list ranked by successful
+  jump count.
+- Added private local jump history that is updated by the shell bridge only
+  after a successful directory change.
+
 ## [0.3.0] - 2026-08-22
 
 ### Changed

@@ -1,14 +1,16 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::io;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 pub const APP_NAME: &str = "hop";
 pub const CONFIG_DIR_NAME: &str = ".x-cli-hop";
 pub const CONFIG_FILE_NAME: &str = "config.toml";
+pub const HISTORY_FILE_NAME: &str = "history.toml";
 
 const CONFIG_VERSION: u32 = 2;
+const HISTORY_VERSION: u32 = 1;
 
 const SKIP_DIRS: &[&str] = &[
     "node_modules",
@@ -51,6 +53,33 @@ pub struct ProjectConfig {
 pub struct ProjectConfigEntry {
     pub path: PathBuf,
     pub active: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JumpHistory {
+    pub version: u32,
+    pub projects: Vec<JumpHistoryEntry>,
+}
+
+impl Default for JumpHistory {
+    fn default() -> Self {
+        Self {
+            version: HISTORY_VERSION,
+            projects: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JumpHistoryEntry {
+    pub path: PathBuf,
+    pub jumps: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RankedProject {
+    pub path: PathBuf,
+    pub jumps: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,6 +150,11 @@ pub fn config_path(home: &Path) -> PathBuf {
     cli_home_path(home).join(CONFIG_FILE_NAME)
 }
 
+#[must_use]
+pub fn history_path(home: &Path) -> PathBuf {
+    cli_home_path(home).join(HISTORY_FILE_NAME)
+}
+
 pub fn load_project_config(path: &Path) -> io::Result<ProjectConfig> {
     let contents = fs::read_to_string(path)?;
     parse_project_config(&contents)
@@ -133,6 +167,94 @@ pub fn write_project_config(path: &Path, config: &ProjectConfig) -> io::Result<(
     }
 
     fs::write(path, render_project_config(config))
+}
+
+pub fn load_jump_history(path: &Path) -> io::Result<JumpHistory> {
+    let contents = fs::read_to_string(path)?;
+    parse_jump_history(&contents)
+        .map_err(|message| io::Error::new(io::ErrorKind::InvalidData, message))
+}
+
+pub fn write_jump_history(path: &Path, history: &JumpHistory) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(HISTORY_FILE_NAME);
+    let temporary = path.with_file_name(format!(".{file_name}.tmp-{}", std::process::id()));
+    let result = (|| {
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temporary)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        }
+        file.write_all(render_jump_history(history).as_bytes())?;
+        file.sync_all()?;
+        fs::rename(&temporary, path)
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+pub fn record_jump(path: &Path, project_path: &Path) -> io::Result<()> {
+    let mut history = match load_jump_history(path) {
+        Ok(history) => history,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => JumpHistory::default(),
+        Err(error) => return Err(error),
+    };
+
+    if let Some(project) = history
+        .projects
+        .iter_mut()
+        .find(|project| project.path == project_path)
+    {
+        project.jumps = project.jumps.saturating_add(1);
+    } else {
+        history.projects.push(JumpHistoryEntry {
+            path: project_path.to_path_buf(),
+            jumps: 1,
+        });
+    }
+
+    write_jump_history(path, &history)
+}
+
+#[must_use]
+pub fn rank_projects_by_jumps(projects: Vec<PathBuf>, history: &JumpHistory) -> Vec<RankedProject> {
+    let jumps_by_path = history
+        .projects
+        .iter()
+        .map(|project| (&project.path, project.jumps))
+        .collect::<BTreeMap<_, _>>();
+    let mut ranked = projects
+        .into_iter()
+        .map(|path| RankedProject {
+            jumps: jumps_by_path.get(&path).copied().unwrap_or(0),
+            path,
+        })
+        .collect::<Vec<_>>();
+
+    ranked.sort_by(|left, right| {
+        right
+            .jumps
+            .cmp(&left.jumps)
+            .then_with(|| compare_paths_alphanumeric(&left.path, &right.path))
+    });
+    ranked
 }
 
 #[must_use]
@@ -274,6 +396,78 @@ pub fn render_project_config(config: &ProjectConfig) -> String {
         push_toml_string(&mut output, &project.path.display().to_string());
         output.push_str("\"\nactive = ");
         output.push_str(if project.active { "true" } else { "false" });
+        output.push('\n');
+    }
+
+    output
+}
+
+pub fn parse_jump_history(contents: &str) -> Result<JumpHistory, String> {
+    let mut version = None;
+    let mut projects = Vec::new();
+    let mut current_project: Option<JumpHistoryEntryDraft> = None;
+
+    for (line_index, raw_line) in contents.lines().enumerate() {
+        let line_number = line_index + 1;
+        let line = strip_toml_comment(raw_line).trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        if line == "[[projects]]" {
+            if let Some(project) = current_project.take() {
+                finish_jump_history_entry(project, &mut projects, line_number)?;
+            }
+            current_project = Some(JumpHistoryEntryDraft::default());
+            continue;
+        }
+
+        let Some((raw_key, raw_value)) = line.split_once('=') else {
+            return Err(format!("line {line_number}: expected key = value"));
+        };
+        let key = raw_key.trim();
+        let value = raw_value.trim();
+
+        match current_project.as_mut() {
+            Some(project) => match key {
+                "path" => {
+                    project.path = Some(PathBuf::from(parse_toml_string(value, line_number)?))
+                }
+                "jumps" => project.jumps = Some(parse_toml_u64(value, "jumps", line_number)?),
+                _ => return Err(format!("line {line_number}: unknown history key `{key}`")),
+            },
+            None => match key {
+                "version" => version = Some(parse_config_version(value, line_number)?),
+                _ => return Err(format!("line {line_number}: unknown history key `{key}`")),
+            },
+        }
+    }
+
+    if let Some(project) = current_project {
+        finish_jump_history_entry(project, &mut projects, contents.lines().count() + 1)?;
+    }
+
+    let version = version.unwrap_or(HISTORY_VERSION);
+    if version != HISTORY_VERSION {
+        return Err(format!("unsupported history version {version}"));
+    }
+
+    Ok(JumpHistory { version, projects })
+}
+
+#[must_use]
+pub fn render_jump_history(history: &JumpHistory) -> String {
+    let mut output = String::from(
+        "# hop local jump history\n# Updated automatically after successful directory changes.\n\nversion = 1\n",
+    );
+    let mut projects = history.projects.iter().collect::<Vec<_>>();
+    projects.sort_by(|left, right| compare_paths_alphanumeric(&left.path, &right.path));
+
+    for project in projects {
+        output.push_str("\n[[projects]]\npath = \"");
+        push_toml_string(&mut output, &project.path.display().to_string());
+        output.push_str("\"\njumps = ");
+        output.push_str(&project.jumps.to_string());
         output.push('\n');
     }
 
@@ -474,6 +668,12 @@ struct ProjectConfigEntryDraft {
     active: Option<bool>,
 }
 
+#[derive(Default)]
+struct JumpHistoryEntryDraft {
+    path: Option<PathBuf>,
+    jumps: Option<u64>,
+}
+
 fn finish_project_config_entry(
     project: ProjectConfigEntryDraft,
     projects: &mut Vec<ProjectConfigEntry>,
@@ -490,10 +690,32 @@ fn finish_project_config_entry(
     Ok(())
 }
 
+fn finish_jump_history_entry(
+    project: JumpHistoryEntryDraft,
+    projects: &mut Vec<JumpHistoryEntry>,
+    line_number: usize,
+) -> Result<(), String> {
+    let path = project
+        .path
+        .ok_or_else(|| format!("line {line_number}: history entry is missing path"))?;
+
+    projects.push(JumpHistoryEntry {
+        path,
+        jumps: project.jumps.unwrap_or(0),
+    });
+    Ok(())
+}
+
 fn parse_config_version(value: &str, line_number: usize) -> Result<u32, String> {
     value
         .parse::<u32>()
         .map_err(|_| format!("line {line_number}: version must be an integer"))
+}
+
+fn parse_toml_u64(value: &str, key: &str, line_number: usize) -> Result<u64, String> {
+    value
+        .parse::<u64>()
+        .map_err(|_| format!("line {line_number}: {key} must be a non-negative integer"))
 }
 
 fn parse_toml_bool(value: &str, line_number: usize) -> Result<bool, String> {
@@ -962,6 +1184,133 @@ active = true
         assert_eq!(diff.unconfigured_projects, vec![unconfigured]);
         assert_eq!(diff.stale_projects, vec![stale]);
         assert!(!diff.is_empty());
+    }
+
+    #[test]
+    fn jump_history_round_trips_and_sorts_paths() {
+        let history = JumpHistory {
+            version: 1,
+            projects: vec![
+                JumpHistoryEntry {
+                    path: PathBuf::from("/home/alex/work/project-2"),
+                    jumps: 7,
+                },
+                JumpHistoryEntry {
+                    path: PathBuf::from("/home/alex/work/project-10"),
+                    jumps: 3,
+                },
+            ],
+        };
+
+        let rendered = render_jump_history(&history);
+        let project_2 = rendered.find("project-2").expect("project-2 rendered");
+        let project_10 = rendered.find("project-10").expect("project-10 rendered");
+
+        assert!(project_2 < project_10);
+        assert_eq!(parse_jump_history(&rendered), Ok(history));
+    }
+
+    #[test]
+    fn recording_jumps_increments_existing_counts() {
+        let root = temp_root("jump-history");
+        let path = root.join("history.toml");
+        let project = PathBuf::from("/home/alex/work/hop");
+
+        record_jump(&path, &project).expect("record first jump");
+        record_jump(&path, &project).expect("record second jump");
+
+        assert_eq!(
+            load_jump_history(&path).expect("load history"),
+            JumpHistory {
+                version: 1,
+                projects: vec![JumpHistoryEntry {
+                    path: project,
+                    jumps: 2,
+                }],
+            }
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            assert_eq!(
+                fs::metadata(&path)
+                    .expect("history metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600,
+            );
+        }
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recording_jumps_saturates_at_the_maximum_count() {
+        let root = temp_root("saturated-history");
+        let path = root.join("history.toml");
+        let project = PathBuf::from("/home/alex/work/hop");
+        write_jump_history(
+            &path,
+            &JumpHistory {
+                version: 1,
+                projects: vec![JumpHistoryEntry {
+                    path: project.clone(),
+                    jumps: u64::MAX,
+                }],
+            },
+        )
+        .expect("write saturated history");
+
+        record_jump(&path, &project).expect("record saturated jump");
+
+        assert_eq!(
+            load_jump_history(&path)
+                .expect("load saturated history")
+                .projects[0]
+                .jumps,
+            u64::MAX
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ranks_projects_by_jump_count_then_alphanumeric_path() {
+        let projects = vec![
+            PathBuf::from("/work/project-10"),
+            PathBuf::from("/work/favorite"),
+            PathBuf::from("/work/project-2"),
+        ];
+        let history = JumpHistory {
+            version: 1,
+            projects: vec![JumpHistoryEntry {
+                path: PathBuf::from("/work/favorite"),
+                jumps: 4,
+            }],
+        };
+
+        let ranked = rank_projects_by_jumps(projects, &history);
+
+        assert_eq!(
+            ranked,
+            vec![
+                RankedProject {
+                    path: PathBuf::from("/work/favorite"),
+                    jumps: 4,
+                },
+                RankedProject {
+                    path: PathBuf::from("/work/project-2"),
+                    jumps: 0,
+                },
+                RankedProject {
+                    path: PathBuf::from("/work/project-10"),
+                    jumps: 0,
+                },
+            ]
+        );
     }
 
     fn temp_root(name: &str) -> PathBuf {

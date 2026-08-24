@@ -78,6 +78,8 @@ hop config
 hop -v
 hop A1
 hop --copy-path A1
+hop --frequent
+hop --frequent 1
 hop update
 hop --root /srv
 ```
@@ -90,6 +92,16 @@ output, which keeps shell integration safe and predictable. Copy mode writes no
 stdout and copies the selected path with `pbcopy`, `wl-copy`, `xclip`, or `xsel`.
 
 `hop ~` jumps directly to the hop home directory, `~/.x-cli-hop`.
+
+`hop --frequent` shows all active projects in one list, ordered by the number
+of successful jumps. This view uses numeric selectors, so `hop --frequent 1`
+jumps to the current most-used project. Equal counts fall back to alphanumeric
+path order. Copying a path and failed directory changes do not increase the
+count.
+
+Jump counts are kept locally in `~/.x-cli-hop/history.toml`, separately from
+the manually editable project config. The installed shell bridge records a jump
+only after it changes directory successfully.
 
 `hop config` scans `$HOME` and creates or updates
 `~/.x-cli-hop/config.toml`. The config records the scan root, preserves
@@ -163,6 +175,7 @@ Confirm these exist after pulling:
 - `CHANGELOG.md` — release progress (if this project releases).
 - `.vibe/kernel/*.md` — local copies of Vibecoding Kernel instructions (do not edit).
 - `.githooks/` — optional git hooks managed by the kernel (lint gates).
+- `BUSINESS.md` and `business/` — product purpose and navigation rules.
 - `docs/architecture/` — design truth (agents choose scope; keep schemas/diagrams/boundaries up to date).
 - `docs/contracts/` — stable contracts.
 - `docs/features/` — accepted feature notes.

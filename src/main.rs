@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
 use hop::{
-    APP_NAME, ChoiceParseError, ProjectConfig, Sector, active_project_paths, cli_home_path,
-    config_path, diff_project_config_tree, discover_projects, group_projects, load_project_config,
-    merge_project_config, parse_choice, write_project_config,
+    APP_NAME, ChoiceParseError, JumpHistory, ProjectConfig, RankedProject, Sector,
+    active_project_paths, cli_home_path, config_path, diff_project_config_tree, discover_projects,
+    group_projects, history_path, load_jump_history, load_project_config, merge_project_config,
+    parse_choice, rank_projects_by_jumps, record_jump, write_project_config,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -33,6 +34,7 @@ enum Command {
     ShellInit,
     Update,
     Config,
+    RecordJump,
 }
 
 #[derive(Debug)]
@@ -41,6 +43,7 @@ struct Options {
     root: Option<PathBuf>,
     target: Option<String>,
     copy_path: bool,
+    frequent: bool,
     color: bool,
 }
 
@@ -50,7 +53,7 @@ fn main() -> ExitCode {
         Err(message) => return fail(&message, colors_enabled()),
     };
 
-    if options.command != Command::Config {
+    if !matches!(options.command, Command::Config | Command::RecordJump) {
         warn_if_project_config_needs_refresh(&options);
     }
 
@@ -77,6 +80,7 @@ fn main() -> ExitCode {
         }
         Command::Update => run_update(options.color),
         Command::Config => run_config(options),
+        Command::RecordJump => run_record_jump(options),
         Command::Jump => run_jump(options),
     }
 }
@@ -213,6 +217,21 @@ fn run_jump(options: Options) -> ExitCode {
         return fail("No git projects found under the scan root.", options.color);
     }
 
+    if options.frequent {
+        let history = match load_optional_jump_history() {
+            Ok(history) => history,
+            Err(message) => return fail(&message, options.color),
+        };
+        let ranked = rank_projects_by_jumps(projects, &history);
+
+        if let Some(target) = options.target {
+            return choose_frequent_target(&ranked, &target, options.copy_path, options.color);
+        }
+
+        render_frequent(&root, &ranked, options.color);
+        return frequent_prompt_loop(&ranked, options.copy_path, options.color);
+    }
+
     let sectors = group_projects(&root, projects);
 
     if let Some(target) = options.target {
@@ -221,6 +240,28 @@ fn run_jump(options: Options) -> ExitCode {
 
     render(&sectors, options.color);
     prompt_loop(&sectors, options.copy_path, options.color)
+}
+
+fn run_record_jump(options: Options) -> ExitCode {
+    let Some(target) = options.target else {
+        return fail("--record-jump requires a project path", options.color);
+    };
+    let project = PathBuf::from(target);
+    if !project.join(".git").exists() {
+        return ExitCode::SUCCESS;
+    }
+    let home = match home_dir() {
+        Ok(home) => home,
+        Err(message) => return fail(&message, options.color),
+    };
+
+    match record_jump(&history_path(&home), &project) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => fail(
+            &format!("Cannot update jump history: {error}"),
+            options.color,
+        ),
+    }
 }
 
 fn run_config(options: Options) -> ExitCode {
@@ -416,6 +457,18 @@ fn load_optional_project_config(path: &Path) -> Result<Option<ProjectConfig>, St
     }
 }
 
+fn load_optional_jump_history() -> Result<JumpHistory, String> {
+    let Some(home) = env::var_os("HOME").map(PathBuf::from) else {
+        return Ok(JumpHistory::default());
+    };
+    let path = history_path(&home);
+    match load_jump_history(&path) {
+        Ok(history) => Ok(history),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(JumpHistory::default()),
+        Err(error) => Err(format!("Cannot read {}: {error}", path.display())),
+    }
+}
+
 fn home_dir() -> Result<PathBuf, String> {
     env::var_os("HOME")
         .map(PathBuf::from)
@@ -473,6 +526,69 @@ fn prompt_loop(sectors: &[Sector], copy_path: bool, color: bool) -> ExitCode {
             Err(message) => warn(message, color),
         }
     }
+}
+
+fn frequent_prompt_loop(projects: &[RankedProject], copy_path: bool, color: bool) -> ExitCode {
+    loop {
+        eprint!(
+            "  {} {} {}: ",
+            paint(color, BLUE, ">"),
+            paint(color, BOLD, if copy_path { "copy" } else { "jump to" }),
+            paint(color, DIM, "<position>"),
+        );
+        if io::stderr().flush().is_err() {
+            return ExitCode::from(1);
+        }
+
+        let input = match read_choice() {
+            Ok(input) => input,
+            Err(_) => return ExitCode::from(1),
+        };
+        if input.is_empty() {
+            return ExitCode::from(1);
+        }
+
+        match frequent_path_for_target(projects, &input) {
+            Ok(path) => return emit_path(path, copy_path, color),
+            Err(message) => warn(message, color),
+        }
+    }
+}
+
+fn choose_frequent_target(
+    projects: &[RankedProject],
+    target: &str,
+    copy_path: bool,
+    color: bool,
+) -> ExitCode {
+    match frequent_path_for_target(projects, target) {
+        Ok(path) => emit_path(path, copy_path, color),
+        Err(message) => fail(message, color),
+    }
+}
+
+fn frequent_path_for_target<'a>(
+    projects: &'a [RankedProject],
+    target: &str,
+) -> Result<&'a Path, &'static str> {
+    let target = target.trim();
+    if target.is_empty() {
+        return Err("empty input cancels");
+    }
+    if !target.chars().all(|ch| ch.is_ascii_digit()) {
+        return Err("expected a positive project position, for example 1");
+    }
+    let position = target
+        .parse::<usize>()
+        .map_err(|_| "expected a positive project position, for example 1")?;
+    if position == 0 {
+        return Err("project position starts at 1");
+    }
+
+    projects
+        .get(position - 1)
+        .map(|project| project.path.as_path())
+        .ok_or("No such project")
 }
 
 fn choose_target(sectors: &[Sector], target: &str, copy_path: bool, color: bool) -> ExitCode {
@@ -809,6 +925,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut root = None;
     let mut target = None;
     let mut copy_path = false;
+    let mut frequent = false;
     let mut color = colors_enabled();
     let mut args = args.peekable();
 
@@ -818,6 +935,17 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
             "-v" | "-V" | "--version" => command = Command::Version,
             "--shell-init" => command = Command::ShellInit,
             "--copy-path" => copy_path = true,
+            "--frequent" => frequent = true,
+            "--record-jump" => {
+                if command != Command::Jump || target.is_some() {
+                    return Err(format!("unexpected argument: {arg}"));
+                }
+                let Some(value) = args.next() else {
+                    return Err("--record-jump requires a project path".to_owned());
+                };
+                command = Command::RecordJump;
+                target = Some(value);
+            }
             "--no-color" => color = false,
             "--root" => {
                 let Some(value) = args.next() else {
@@ -847,7 +975,10 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
                 command = Command::Update;
             }
             _ => {
-                if matches!(command, Command::Update | Command::Config) {
+                if matches!(
+                    command,
+                    Command::Update | Command::Config | Command::RecordJump
+                ) {
                     return Err(format!("unexpected argument: {arg}"));
                 }
                 if target.is_some() {
@@ -863,6 +994,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
         root,
         target,
         copy_path,
+        frequent,
         color,
     })
 }
@@ -906,6 +1038,72 @@ fn render(sectors: &[Sector], color: bool) {
     }
 
     eprintln!();
+}
+
+fn render_frequent(scan_root: &Path, projects: &[RankedProject], color: bool) {
+    eprintln!();
+    eprintln!(
+        "  {} {} {}",
+        paint(color, YELLOW, "*"),
+        paint(color, BOLD, &title_case(APP_NAME)),
+        paint(color, DIM, &format!("(v{VERSION})")),
+    );
+    eprintln!();
+    eprintln!(
+        "  {} {} {}",
+        paint(color, DIM, "-----------"),
+        paint(color, BLUE, "Frequent projects"),
+        paint(color, DIM, "-----------"),
+    );
+    eprintln!();
+
+    let position_width = projects.len().to_string().len().max(1);
+    let jump_width = projects
+        .iter()
+        .map(|project| project.jumps.to_string().len())
+        .max()
+        .unwrap_or(1);
+
+    for (index, project) in projects.iter().enumerate() {
+        let name = project
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("?");
+        let location = project_parent_display(scan_root, &project.path);
+        eprintln!(
+            "  {} {} {} {}",
+            paint(color, CYAN, &format!("{:>position_width$})", index + 1)),
+            paint(color, GREEN, name),
+            paint(color, GRAY, &format!("({location})")),
+            paint(
+                color,
+                DIM,
+                &format!(
+                    "{:>jump_width$} {}",
+                    project.jumps,
+                    if project.jumps == 1 { "jump" } else { "jumps" }
+                ),
+            ),
+        );
+    }
+
+    eprintln!();
+}
+
+fn project_parent_display(scan_root: &Path, project: &Path) -> String {
+    let parent = project.parent().unwrap_or_else(|| Path::new("/"));
+    let display = match parent.strip_prefix(scan_root) {
+        Ok(relative) if relative.as_os_str().is_empty() => "~".to_owned(),
+        Ok(relative) => format!("~/{}", relative.display()),
+        Err(_) => parent.display().to_string(),
+    };
+
+    if display.ends_with('/') {
+        display
+    } else {
+        format!("{display}/")
+    }
 }
 
 fn read_choice() -> io::Result<String> {
@@ -963,7 +1161,7 @@ fn print_help(color: bool) {
 Tiny interactive project navigator for shells on local machines, VMs, and VPS hosts.
 
 {}:
-    hop [<target>] [--copy-path] [--root <dir>] [--no-color]
+    hop [<target>] [--copy-path] [--frequent] [--root <dir>] [--no-color]
     hop ~
     hop config [--root <dir>]
     hop update
@@ -975,6 +1173,7 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 
 {}:
     --copy-path      Copy the selected path instead of printing it
+    --frequent       Rank all projects by successful jump count
     --root <dir>      Scan a directory instead of $HOME
     --no-color        Disable ANSI color output
     -v, -V, --version Print version
@@ -983,7 +1182,8 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 The interactive UI writes to stderr. Jump mode prints only the selected project
 path to stdout, so a shell wrapper can safely cd into it. Target ~ prints the
 hop home directory. Copy mode writes no stdout and copies the selected
-project path to the clipboard.",
+project path to the clipboard. Frequent mode uses numeric positions instead
+of sector labels.",
         paint(color, BOLD, &title_case(APP_NAME)),
         paint(color, DIM, &format!("v{VERSION}")),
         paint(color, BLUE, "USAGE"),
@@ -1043,7 +1243,8 @@ function hop {{
         printf '%s\n' "hop: invalid destination: $destination" >&2
         return 1
     fi
-    builtin cd -- "$destination"
+    builtin cd -- "$destination" || return $?
+    command {binary} --record-jump "$destination" --no-color || true
 }}"#,
     )
 }
@@ -1108,6 +1309,9 @@ mod tests {
         assert!(!init.contains("for arg in"));
         assert!(init.contains("command '/opt/hop home/bin/hop' \"$@\""));
         assert!(init.contains("builtin cd -- \"$destination\""));
+        assert!(init.contains(
+            "command '/opt/hop home/bin/hop' --record-jump \"$destination\" --no-color || true"
+        ));
         assert!(init.contains("return \"$exit_status\""));
         assert!(init.contains("invalid destination"));
     }
@@ -1210,6 +1414,60 @@ mod tests {
 
         assert_eq!(options.command, Command::Jump);
         assert_eq!(options.target.as_deref(), Some("b1"));
+    }
+
+    #[test]
+    fn parse_args_accepts_frequent_view_and_numeric_target() {
+        let options = parse_args(["--frequent".to_owned(), "2".to_owned()].into_iter())
+            .expect("parse frequent target");
+
+        assert_eq!(options.command, Command::Jump);
+        assert!(options.frequent);
+        assert_eq!(options.target.as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn parse_args_accepts_internal_jump_recording() {
+        let options = parse_args(
+            [
+                "--record-jump".to_owned(),
+                "/work/hop".to_owned(),
+                "--no-color".to_owned(),
+            ]
+            .into_iter(),
+        )
+        .expect("parse jump recording");
+
+        assert_eq!(options.command, Command::RecordJump);
+        assert_eq!(options.target.as_deref(), Some("/work/hop"));
+        assert!(!options.color);
+    }
+
+    #[test]
+    fn frequent_targets_are_numeric_positions() {
+        let projects = vec![
+            RankedProject {
+                path: PathBuf::from("/work/favorite"),
+                jumps: 8,
+            },
+            RankedProject {
+                path: PathBuf::from("/work/other"),
+                jumps: 2,
+            },
+        ];
+
+        assert_eq!(
+            frequent_path_for_target(&projects, "2"),
+            Ok(Path::new("/work/other"))
+        );
+        assert_eq!(
+            frequent_path_for_target(&projects, "A1"),
+            Err("expected a positive project position, for example 1")
+        );
+        assert_eq!(
+            frequent_path_for_target(&projects, "0"),
+            Err("project position starts at 1")
+        );
     }
 
     #[test]

@@ -31,6 +31,13 @@ on developer machines, VMs, and VPS hosts.
     shell. The Rust CLI owns all argument parsing.
 12. If the raw executable runs from a terminal without the bridge, it reports
     that it cannot change its parent shell instead of silently printing a path.
+13. `--frequent` loads local jump history, globally sorts active projects by
+    descending count and alphanumeric path, and uses one-based numeric
+    selectors instead of sector labels.
+14. After a project `cd` succeeds, the shell bridge invokes the executable's
+    internal recorder. The recorder atomically updates
+    `~/.x-cli-hop/history.toml`; copy mode, failed changes, and `hop ~` do not
+    record a jump.
 
 `hop config` refreshes the config file by scanning `$HOME` or an explicit
 `--root <dir>`, recording that scan root, preserving manually edited
@@ -47,7 +54,8 @@ provides that behavior.
 - The CLI reads local directory metadata only.
 - `hop config` writes local project selection state to
   `~/.x-cli-hop/config.toml`.
-- The CLI does not write logs or telemetry. `--copy-path` explicitly writes the
+- The CLI does not write logs or telemetry. It writes local successful-jump
+  counts to `~/.x-cli-hop/history.toml`; `--copy-path` explicitly writes the
   selected path to the system clipboard.
 - Network access is limited to the optional installer, GitHub release flow, and
   explicit `hop update` command.
