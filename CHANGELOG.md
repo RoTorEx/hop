@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-24
+
 ### Added
 
 - Added `hop --frequent` with a flat numeric project list ranked by successful
