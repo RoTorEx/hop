@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-25
+
 ### Added
 
 - Added `hop list` and `hop list --frequent` for printing either project view
