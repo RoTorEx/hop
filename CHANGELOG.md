@@ -4,6 +4,11 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Changed
+
+- Routed direct Cargo and IDE build output to
+  `~/construction_side/hop/target`.
+
 ## [0.3.2] - 2026-08-25
 
 ### Added
