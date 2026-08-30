@@ -169,7 +169,6 @@ Confirm these exist after pulling:
 
 - `.vibe/kernel/PRINCIPLES.md`
 - `.githooks/pre-commit`
-- `TASK.md`
 - `CHANGELOG.md`
 - `AGENTS.md` contains the `VIBE:KERNEL_ROUTING` markers
 
@@ -177,7 +176,6 @@ Confirm these exist after pulling:
 
 - Keep the repo root minimal. Prefer putting project docs under `docs/` rather than adding many root markdown files.
 - `AGENTS.md` — agent router.
-- `TASK.md` — task queue (agents process and remove completed tasks).
 - `CHANGELOG.md` — release progress (if this project releases).
 - `.vibe/kernel/*.md` — local copies of Vibecoding Kernel instructions (do not edit).
 - `.githooks/` — optional git hooks managed by the kernel (lint gates).
