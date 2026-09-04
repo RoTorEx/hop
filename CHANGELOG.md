@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-09-05
+
 ### Changed
 
 - Excluded `construction_side` from project discovery so build workspaces and
