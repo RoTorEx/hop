@@ -11,6 +11,8 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.name }} release binary
+    env:
+      CARGO_TARGET_DIR: target
     strategy:
       fail-fast: false
       matrix:

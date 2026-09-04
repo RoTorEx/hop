@@ -4,6 +4,11 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Fixed
+
+- Kept GitHub Actions release builds in the runner workspace instead of using
+  the developer-specific Cargo target directory.
+
 ## [0.3.3] - 2026-09-05
 
 ### Changed
