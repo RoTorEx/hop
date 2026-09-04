@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-09-05
+
 ### Fixed
 
 - Kept GitHub Actions release builds in the runner workspace instead of using
