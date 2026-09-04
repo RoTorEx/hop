@@ -13,6 +13,7 @@ const CONFIG_VERSION: u32 = 2;
 const HISTORY_VERSION: u32 = 1;
 
 const SKIP_DIRS: &[&str] = &[
+    "construction_side",
     "node_modules",
     "target",
     "dist",
@@ -890,11 +891,14 @@ mod tests {
         let project = root.join("work/apps/hop");
         let nested = project.join("nested/ignored");
         let skipped = root.join("node_modules/package");
+        let construction_side = root.join("construction_side/tool-cache/checkouts/package");
         let hidden = root.join(".config/project");
 
         fs::create_dir_all(project.join(".git")).expect("create project git dir");
         fs::create_dir_all(nested.join(".git")).expect("create nested git dir");
         fs::create_dir_all(skipped.join(".git")).expect("create skipped git dir");
+        fs::create_dir_all(construction_side.join(".git"))
+            .expect("create construction-side git dir");
         fs::create_dir_all(hidden.join(".git")).expect("create hidden git dir");
 
         let projects = discover_projects(&root).expect("scan projects");

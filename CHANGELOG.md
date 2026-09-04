@@ -6,6 +6,8 @@ Tracks real product and release progress.
 
 ### Changed
 
+- Excluded `construction_side` from project discovery so build workspaces and
+  cloned dependencies do not appear as projects.
 - Routed direct Cargo and IDE build output to
   `~/construction_side/hop/target`.
 

@@ -15,8 +15,8 @@ on developer machines, VMs, and VPS hosts.
    repair command.
 4. A directory below a scan root is treated as a project when it contains
    `.git`.
-5. Known noisy directories such as `node_modules`, `target`, virtualenvs, caches,
-   and hidden directories are skipped.
+5. Known noisy directories such as `construction_side`, `node_modules`,
+   `target`, virtualenvs, caches, and hidden directories are skipped.
 6. Projects are grouped by their parent folder into lettered sectors.
 7. The interactive UI is written to stderr.
 8. Jump mode writes the selected path as the only stdout output.
