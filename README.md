@@ -96,6 +96,19 @@ To enable directory changes in every PowerShell session, add these lines to
 & "$env:USERPROFILE\.x-cli-hop\bin\hop.exe" --shell-init | Out-String | Invoke-Expression
 ```
 
+On Windows, plain `hop config` automatically scans every ready local fixed disk
+(`C:\`, `D:\`, and so on) and combines the projects into one list. There is no
+need to enter drive letters. It shows which disk is being scanned and skips
+system/application folders (`Windows`, `Program Files`, `ProgramData`, `AppData`,
+Recycle Bin, recovery data), build outputs, links, and inaccessible subfolders.
+Mapped network drives, removable media, and disks that are not ready are excluded.
+For a deliberately limited scan, `hop config --root D:\Projects` still works.
+
+After an all-disk scan, ordinary `hop` uses the saved list and checks only whether
+known projects are available. It does not scan all disks again on every jump.
+Run `hop config` after adding projects or connecting another local disk. Existing
+configs remain readable; run plain `hop config` once to switch to all-disk discovery.
+
 Windows PowerShell 5.1 and PowerShell 7 are supported. Configuration and history
 live under `%USERPROFILE%\.x-cli-hop`; copy mode uses `Set-Clipboard`.
 The raw executable also works from CMD, but directory changes require the
@@ -153,8 +166,9 @@ Jump counts are kept locally in `~/.x-cli-hop/history.toml`, separately from
 the manually editable project config. The installed shell bridge records a jump
 only after it changes directory successfully.
 
-`hop config` scans `$HOME` and creates or updates
-`~/.x-cli-hop/config.toml`. The config records the scan root, preserves
+`hop config` scans `$HOME` on Linux/macOS or all ready local fixed disks on
+Windows, and creates or updates
+`~/.x-cli-hop/config.toml`. The config records the scan scope, preserves
 existing `active = true` or `active = false` values for projects that are still
 present, adds newly discovered projects as `active = true`, and removes projects
 that are no longer discovered under that root. Projects are written in
@@ -163,8 +177,9 @@ alphanumeric path order. Edit `active = false` to hide a project from normal
 Passing `--root` to normal jump mode still performs an ad hoc scan instead of
 using the config.
 
-Every non-config command checks whether the configured project tree still
-matches the current folders. If projects were added or removed, hop prints a
+For a single-root config, every non-config command checks whether the configured
+project tree still matches the current folders. An all-disk config checks only
+the availability of known projects to keep navigation fast. If projects were added or removed, hop prints a
 stderr warning and keeps running; run `hop config` again to refresh the
 config. If the config uses a custom scan root, the warning prints the matching
 `hop config --root <dir>` command.

@@ -9,8 +9,9 @@ on developer machines, VMs, and VPS hosts.
    the binary fails with an alert to run `hop config`.
 2. Passing `--root <dir>` to jump mode performs an explicit ad hoc scan instead
    of using the config.
-3. Every non-config command compares the configured project tree with the
-   current folders under the config's scan root. If projects were added or
+3. For single-root configs, every non-config command compares the configured
+   project tree with the current folders under the scan root. All-disk configs
+   check only the availability of known projects. If projects were added or
    removed, it prints a stderr warning and continues; `hop config` is the
    repair command.
 4. A directory below a scan root is treated as a project when it contains
@@ -42,8 +43,9 @@ on developer machines, VMs, and VPS hosts.
     with `--frequent`, and exits without reading a selection or writing a path
     to stdout.
 
-`hop config` refreshes the config file by scanning `$HOME` or an explicit
-`--root <dir>`, recording that scan root, preserving manually edited
+`hop config` refreshes the config file by scanning `$HOME` on Unix, ready local
+fixed disks on Windows, or an explicit `--root <dir>`, recording that scope and
+preserving manually edited
 `active = true` or `active = false` values for projects that are still present,
 adding newly discovered projects, and removing paths that are no longer
 discovered under that root.
@@ -87,3 +89,10 @@ caller directory with `Set-Location -LiteralPath`, and records successful
 project jumps. Native output is decoded as UTF-8 to preserve Unicode paths.
 Copy mode calls PowerShell `Set-Clipboard`. Windows updates are manual ZIP
 replacement after the executable exits; the Unix self-updater is unchanged.
+
+Windows default discovery queries PowerShell's
+[`System.IO.DriveInfo`](https://learn.microsoft.com/en-us/dotnet/api/system.io.driveinfo) for fixed,
+ready drive roots, validates the returned drive-letter paths, and combines
+per-root scans. No Win32 unsafe code or new dependency is needed. Config format
+3 records `scan_all_drives = true`; single-root and legacy configs retain their
+scope until explicitly refreshed. Full-drive scanning is limited to `hop config`.

@@ -282,21 +282,84 @@ fn run_record_jump(options: Options) -> ExitCode {
     }
 }
 
+fn local_drive_roots() -> Result<Vec<PathBuf>, String> {
+    // DriveInfo distinguishes fixed disks from removable and mapped network drives.
+    let output = ProcessCommand::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command",
+            "$ErrorActionPreference = 'Stop'; [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady } | ForEach-Object { $_.Name }"])
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|error| format!("Cannot find local disks using PowerShell: {error}"))?;
+    if !output.status.success() {
+        return Err("Cannot find local disks using PowerShell.".to_owned());
+    }
+    parse_local_drive_roots(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_local_drive_roots(output: &str) -> Result<Vec<PathBuf>, String> {
+    let mut roots = Vec::new();
+    for line in output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        let bytes = line.as_bytes();
+        if bytes.len() != 3 || !bytes[0].is_ascii_alphabetic() || &bytes[1..] != b":\\" {
+            return Err("PowerShell returned an invalid local disk path.".to_owned());
+        }
+        roots.push(PathBuf::from(line.to_ascii_uppercase()));
+    }
+    roots.sort();
+    roots.dedup();
+    if roots.is_empty() {
+        return Err("No ready local disks found.".to_owned());
+    }
+    Ok(roots)
+}
+
+fn discover_config_projects(
+    roots: &[PathBuf],
+    color: bool,
+    show_progress: bool,
+) -> io::Result<Vec<PathBuf>> {
+    let mut projects = Vec::new();
+    for root in roots {
+        if show_progress {
+            eprintln!(
+                "{}",
+                paint(color, DIM, &format!("Scanning {}…", root.display()))
+            );
+        }
+        projects.extend(discover_projects(root).map_err(|error| {
+            io::Error::new(error.kind(), format!("{}: {error}", root.display()))
+        })?);
+    }
+    projects.sort();
+    projects.dedup();
+    Ok(projects)
+}
+
 fn run_config(options: Options) -> ExitCode {
     let home = match home_dir() {
         Ok(home) => home,
         Err(message) => return fail(&message, options.color),
     };
+    let scan_all_drives = cfg!(windows) && options.root.is_none();
     let root = options.root.unwrap_or_else(|| home.clone());
     let path = config_path(&home);
 
-    let projects = match discover_projects(&root) {
+    let roots = if scan_all_drives {
+        match local_drive_roots() {
+            Ok(roots) => roots,
+            Err(message) => return fail(&message, options.color),
+        }
+    } else {
+        vec![root.clone()]
+    };
+    let projects = match discover_config_projects(&roots, options.color, scan_all_drives) {
         Ok(projects) => projects,
         Err(error) => {
-            return fail(
-                &format!("Cannot scan {}: {error}", root.display()),
-                options.color,
-            );
+            return fail(&format!("Cannot scan projects: {error}"), options.color);
         }
     };
 
@@ -304,7 +367,11 @@ fn run_config(options: Options) -> ExitCode {
         Ok(existing) => existing,
         Err(message) => return fail(&message, options.color),
     };
-    let config = merge_project_config(existing, root.clone(), projects);
+    let mut config = merge_project_config(existing, root.clone(), projects);
+    if scan_all_drives {
+        config.scan_root = None;
+        config.scan_all_drives = true;
+    }
     let total = config.projects.len();
     let active = config
         .projects
@@ -394,6 +461,25 @@ fn warn_if_project_config_needs_refresh(options: &Options) {
             return;
         }
     };
+
+    // A full disk walk belongs to the explicit refresh, not every shell jump.
+    if config.scan_all_drives {
+        let missing = config
+            .projects
+            .iter()
+            .filter(|project| !project.path.join(".git").exists())
+            .count();
+        if missing > 0 {
+            config_warning(
+                &format!(
+                    "{missing} configured {} unavailable; run `hop config` to refresh the list.",
+                    project_word(missing)
+                ),
+                options.color,
+            );
+        }
+        return;
+    }
 
     let scan_root = config.scan_root.as_deref().unwrap_or(&home);
     let discovered = match discover_projects(scan_root) {
@@ -1363,6 +1449,60 @@ fn shell_activation_command() -> String {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn drive_listing_handles_multiple_disks_and_rejects_non_drive_output() {
+        assert_eq!(
+            parse_local_drive_roots("D:\\\r\nC:\\\r\nd:\\\r\n").unwrap(),
+            vec![PathBuf::from(r"C:\"), PathBuf::from(r"D:\")]
+        );
+        for output in ["", "\r\n", "warning", r"\\server\share", r"C:\Projects"] {
+            assert!(parse_local_drive_roots(output).is_err());
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn enumerates_ready_local_windows_disks() {
+        let roots = local_drive_roots().expect("enumerate Windows disks");
+        assert!(!roots.is_empty());
+        assert!(roots.iter().all(|root| root.is_absolute() && root.is_dir()));
+    }
+
+    #[test]
+    fn config_discovery_combines_roots_and_preserves_hidden_choices() {
+        let root = env::temp_dir().join(format!(
+            "hop-multi-root-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let first = root.join("first");
+        let second = root.join("second");
+        let first_project = first.join("hop");
+        let second_project = second.join("another");
+        fs::create_dir_all(first_project.join(".git")).unwrap();
+        fs::create_dir_all(second_project.join(".git")).unwrap();
+        let mut existing = merge_project_config(None, first.clone(), vec![first_project.clone()]);
+        existing.projects[0].active = false;
+        let projects =
+            discover_config_projects(&[first.clone(), second, first.clone()], false, false)
+                .unwrap();
+        assert_eq!(projects, vec![first_project.clone(), second_project]);
+        let merged = merge_project_config(Some(existing), first.clone(), projects);
+        assert!(
+            !merged
+                .projects
+                .iter()
+                .find(|p| p.path == first_project)
+                .unwrap()
+                .active
+        );
+        assert!(discover_config_projects(&[first, root.join("missing")], false, false).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn cli_home_shortcut_accepts_literal_and_shell_expanded_home() {

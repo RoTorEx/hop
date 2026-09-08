@@ -1,8 +1,8 @@
 # Hop Business Truth
 
 Hop is a local-first project navigator for developers who move between Git
-working directories from bash, zsh, or Windows PowerShell. It discovers projects, lets the user hide
-irrelevant entries, presents selectable views, and delegates the final directory
+working directories from bash, zsh, or Windows PowerShell. It discovers projects,
+lets the user hide irrelevant entries, presents selectable views, and delegates the final directory
 change to its shell integration.
 
 ## Actors and concepts
@@ -17,7 +17,11 @@ change to its shell integration.
 ## Core flows and invariants
 
 - `hop config` refreshes discovered projects while preserving the user's
-  `active` choices for paths that still exist.
+  `active` choices for paths that still exist. On Windows, its default scope is
+  every ready local fixed disk so users do not need to specify drive letters.
+  Linux/macOS default to the user home; `--root` explicitly limits either platform.
+- All-disk discovery runs on `hop config`; normal navigation uses the saved list
+  and checks known project availability without repeating a full disk scan.
 - The default view groups active projects into sectors and addresses them with
   selectors such as `A1`.
 - The frequent view globally ranks the same active projects by successful jump

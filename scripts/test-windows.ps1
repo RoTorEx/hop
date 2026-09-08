@@ -11,11 +11,15 @@ try {
     $unicodeName = -join ([char[]](0x043F, 0x0440, 0x043E, 0x0435, 0x043A, 0x0442))
     $project = Join-Path $testRoot "work\alex's $unicodeName [1]"
     New-Item -ItemType Directory -Path (Join-Path $project '.git') -Force | Out-Null
+    $junction = Join-Path $testRoot 'work\junction'
+    New-Item -ItemType Junction -Path $junction -Target $project | Out-Null
     $installed = Join-Path $testRoot "hop's $unicodeName.exe"
     Copy-Item -LiteralPath (Resolve-Path $Binary).Path -Destination $installed
     $env:USERPROFILE = $testRoot
     & $installed config --root (Join-Path $testRoot 'work') --no-color
     if ($LASTEXITCODE -ne 0) { throw 'Config failed' }
+    $configText = Get-Content -LiteralPath (Join-Path $testRoot '.x-cli-hop\config.toml') -Raw
+    if ($configText -match 'junction') { throw 'Discovery followed a junction' }
     & $installed --shell-init | Out-String | Invoke-Expression
     hop A1 --no-color
     if ((Get-Location).Path -ne $project) { throw 'Shell did not change directory' }
@@ -42,6 +46,7 @@ try {
     Set-Location -LiteralPath $originalLocation.Path
     [Console]::OutputEncoding = $originalEncoding
     $env:USERPROFILE = $originalHome
+    if ($junction -and (Test-Path -LiteralPath $junction)) { [IO.Directory]::Delete($junction) }
     Remove-Item Function:\hop -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

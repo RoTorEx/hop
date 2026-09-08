@@ -9,7 +9,7 @@ pub const CONFIG_DIR_NAME: &str = ".x-cli-hop";
 pub const CONFIG_FILE_NAME: &str = "config.toml";
 pub const HISTORY_FILE_NAME: &str = "history.toml";
 
-const CONFIG_VERSION: u32 = 2;
+const CONFIG_VERSION: u32 = 3;
 const HISTORY_VERSION: u32 = 1;
 
 const SKIP_DIRS: &[&str] = &[
@@ -47,6 +47,7 @@ pub struct Sector {
 pub struct ProjectConfig {
     pub version: u32,
     pub scan_root: Option<PathBuf>,
+    pub scan_all_drives: bool,
     pub projects: Vec<ProjectConfigEntry>,
 }
 
@@ -281,6 +282,7 @@ pub fn merge_project_config(
     ProjectConfig {
         version: CONFIG_VERSION,
         scan_root: Some(scan_root),
+        scan_all_drives: false,
         projects: sort_project_config_entries(
             projects
                 .into_iter()
@@ -321,6 +323,7 @@ pub fn active_project_paths(config: &ProjectConfig) -> Vec<PathBuf> {
 pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
     let mut version = None;
     let mut scan_root = None;
+    let mut scan_all_drives = false;
     let mut projects = Vec::new();
     let mut current_project: Option<ProjectConfigEntryDraft> = None;
 
@@ -355,6 +358,7 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
             },
             None => match key {
                 "version" => version = Some(parse_config_version(value, line_number)?),
+                "scan_all_drives" => scan_all_drives = parse_toml_bool(value, line_number)?,
                 "scan_root" => {
                     scan_root = Some(PathBuf::from(parse_toml_string(value, line_number)?))
                 }
@@ -372,9 +376,14 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
         return Err(format!("unsupported config version {version}"));
     }
 
+    if scan_all_drives && scan_root.is_some() {
+        return Err("scan_all_drives and scan_root cannot be combined".to_owned());
+    }
+
     Ok(ProjectConfig {
         version,
         scan_root,
+        scan_all_drives,
         projects,
     })
 }
@@ -385,6 +394,9 @@ pub fn render_project_config(config: &ProjectConfig) -> String {
         "# hop project config\n# Set active = false to hide a project.\n# Run hop config to refresh after adding or removing projects.\n\n",
     );
     output.push_str(&format!("version = {CONFIG_VERSION}\n"));
+    if config.scan_all_drives {
+        output.push_str("scan_all_drives = true\n");
+    }
     if let Some(scan_root) = &config.scan_root {
         output.push_str("scan_root = \"");
         push_toml_string(&mut output, &scan_root.display().to_string());
@@ -864,7 +876,33 @@ fn scan_dir(root: &Path, out: &mut Vec<PathBuf>, is_root: bool) -> io::Result<()
 }
 
 fn should_skip_dir(name: &str) -> bool {
-    name.starts_with('.') || SKIP_DIRS.contains(&name)
+    name.starts_with('.')
+        || SKIP_DIRS.iter().any(|skip| {
+            if cfg!(windows) {
+                name.eq_ignore_ascii_case(skip)
+            } else {
+                name == *skip
+            }
+        })
+        || (cfg!(windows) && is_windows_system_dir(name))
+}
+
+fn is_windows_system_dir(name: &str) -> bool {
+    [
+        "Windows",
+        "Program Files",
+        "Program Files (x86)",
+        "ProgramData",
+        "AppData",
+        "$Recycle.Bin",
+        "System Volume Information",
+        "Recovery",
+        "PerfLogs",
+        "$Windows.~BT",
+        "$Windows.~WS",
+    ]
+    .iter()
+    .any(|skip| name.eq_ignore_ascii_case(skip))
 }
 
 fn display_relative_root(scan_root: &Path, path: &Path) -> String {
@@ -984,6 +1022,7 @@ active = true # trailing comments are fine
             ProjectConfig {
                 version: 2,
                 scan_root: Some(PathBuf::from("/home/alex")),
+                scan_all_drives: false,
                 projects: vec![
                     ProjectConfigEntry {
                         path: PathBuf::from("/home/alex/work/hop"),
@@ -1000,7 +1039,75 @@ active = true # trailing comments are fine
         let rendered = render_project_config(&config);
         let reparsed = parse_project_config(&rendered).expect("reparse rendered config");
 
-        assert_eq!(reparsed, config);
+        assert_eq!(
+            reparsed,
+            ProjectConfig {
+                version: CONFIG_VERSION,
+                ..config
+            }
+        );
+    }
+
+    #[test]
+    fn all_drives_config_round_trips_and_rejects_ambiguous_scope() {
+        let config = ProjectConfig {
+            version: CONFIG_VERSION,
+            scan_root: None,
+            scan_all_drives: true,
+            projects: vec![ProjectConfigEntry {
+                path: PathBuf::from(r"D:\Projects\hop"),
+                active: false,
+            }],
+        };
+        assert_eq!(
+            parse_project_config(&render_project_config(&config)).unwrap(),
+            config
+        );
+        assert!(
+            parse_project_config("version = 3\nscan_all_drives = true\nscan_root = \"/work\"\n")
+                .is_err()
+        );
+        assert!(
+            !parse_project_config("version = 2\nscan_root = \"/work\"\n")
+                .unwrap()
+                .scan_all_drives
+        );
+    }
+
+    #[test]
+    fn windows_system_folders_are_excluded_without_hiding_user_projects() {
+        for name in [
+            "WINDOWS",
+            "program files",
+            "AppData",
+            "$Recycle.Bin",
+            "System Volume Information",
+        ] {
+            assert!(is_windows_system_dir(name));
+        }
+        for name in ["Users", "Projects", "Work", "OneDrive"] {
+            assert!(!is_windows_system_dir(name));
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_scan_skips_system_folders_and_case_insensitive_build_outputs() {
+        let root = temp_root("windows-exclusions");
+        for directory in [
+            "Windows",
+            "Program Files",
+            "AppData",
+            "NODE_MODULES",
+            "Users/alex/Projects",
+        ] {
+            fs::create_dir_all(root.join(directory).join("hop/.git")).unwrap();
+        }
+        assert_eq!(
+            discover_projects(&root).unwrap(),
+            vec![root.join("Users/alex/Projects/hop")]
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1030,6 +1137,7 @@ active = true
         let existing = ProjectConfig {
             version: 1,
             scan_root: Some(PathBuf::from("/home/alex")),
+            scan_all_drives: false,
             projects: vec![
                 ProjectConfigEntry {
                     path: PathBuf::from("/home/alex/work/hop"),
@@ -1049,7 +1157,7 @@ active = true
 
         let merged = merge_project_config(Some(existing), scan_root.clone(), discovered);
 
-        assert_eq!(merged.version, 2);
+        assert_eq!(merged.version, CONFIG_VERSION);
         assert_eq!(merged.scan_root, Some(scan_root));
         assert_eq!(
             merged.projects,
@@ -1071,6 +1179,7 @@ active = true
         let existing = ProjectConfig {
             version: 1,
             scan_root: None,
+            scan_all_drives: false,
             projects: vec![ProjectConfigEntry {
                 path: PathBuf::from("/home/alex/work/project-10"),
                 active: false,
@@ -1104,6 +1213,7 @@ active = true
         let config = ProjectConfig {
             version: 2,
             scan_root: Some(PathBuf::from("/home/alex")),
+            scan_all_drives: false,
             projects: vec![
                 ProjectConfigEntry {
                     path: PathBuf::from("/home/alex/work/project-10"),
@@ -1141,6 +1251,7 @@ active = true
         let config = ProjectConfig {
             version: 1,
             scan_root: None,
+            scan_all_drives: false,
             projects: vec![
                 ProjectConfigEntry {
                     path: active.clone(),
@@ -1170,6 +1281,7 @@ active = true
         let config = ProjectConfig {
             version: 2,
             scan_root: Some(PathBuf::from("/home/alex")),
+            scan_all_drives: false,
             projects: vec![
                 ProjectConfigEntry {
                     path: configured.clone(),

@@ -4,6 +4,14 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Changed
+
+- On Windows, `hop config` now discovers projects across all ready local fixed
+  disks automatically, skipping system folders. All-disk configs use the saved
+  project list during navigation instead of rescanning disks on every command.
+- Config format 3 records all-disk discovery; existing config formats remain
+  readable, and `--root` still selects a single directory.
+
 ### Added
 
 - Windows x86_64 release ZIP with `hop.exe`, PowerShell shell integration,
