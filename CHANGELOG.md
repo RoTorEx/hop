@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-09-09
+
 ### Changed
 
 - On Windows, `hop config` now discovers projects across all ready local fixed
