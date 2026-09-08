@@ -1,7 +1,7 @@
 # Hop Business Truth
 
 Hop is a local-first project navigator for developers who move between Git
-working directories from bash or zsh. It discovers projects, lets the user hide
+working directories from bash, zsh, or Windows PowerShell. It discovers projects, lets the user hide
 irrelevant entries, presents selectable views, and delegates the final directory
 change to its shell integration.
 

@@ -77,3 +77,13 @@ provides that behavior.
   current executable and root-level generated shell bridge through atomic file
   replacements. The updater recognizes both legacy root-level and `bin/`
   executable layouts.
+
+## Windows
+
+Windows x86_64 releases contain `hop.exe` in a ZIP archive. The Windows binary
+uses `USERPROFILE` for local state and emits a PowerShell function from
+`--shell-init`. The function uses the absolute executable path, changes the
+caller directory with `Set-Location -LiteralPath`, and records successful
+project jumps. Native output is decoded as UTF-8 to preserve Unicode paths.
+Copy mode calls PowerShell `Set-Clipboard`. Windows updates are manual ZIP
+replacement after the executable exits; the Unix self-updater is unchanged.

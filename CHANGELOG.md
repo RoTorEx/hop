@@ -4,6 +4,13 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Added
+
+- Windows x86_64 release ZIP with `hop.exe`, PowerShell shell integration,
+  user-profile storage, clipboard support, and download/build instructions.
+- Build preflight on pushes, pull requests, and manual workflow runs, including
+  native Rust tests and Windows PowerShell 5.1/7 navigation smoke tests.
+
 ## [0.3.4] - 2026-09-05
 
 ### Fixed

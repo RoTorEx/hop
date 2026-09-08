@@ -69,6 +69,50 @@ hop b1
 hop --copy-path A1
 ```
 
+## Windows (x64)
+
+Releases include `hop-windows-x86_64.zip` containing `hop.exe`. Download it
+from [GitHub Releases](https://github.com/RoTorEx/hop/releases/latest), or run
+these commands in PowerShell once a Windows release is published:
+
+```powershell
+$hopBin = Join-Path $env:USERPROFILE '.x-cli-hop\bin'
+New-Item -ItemType Directory -Path $hopBin -Force | Out-Null
+$hopArchive = Join-Path $env:TEMP 'hop-windows-x86_64.zip'
+Invoke-WebRequest 'https://github.com/RoTorEx/hop/releases/latest/download/hop-windows-x86_64.zip' -OutFile $hopArchive
+Expand-Archive -LiteralPath $hopArchive -DestinationPath $hopBin -Force
+Remove-Item -LiteralPath $hopArchive
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+& "$hopBin\hop.exe" --shell-init | Out-String | Invoke-Expression
+hop config
+hop
+```
+
+To enable directory changes in every PowerShell session, add these lines to
+`$PROFILE` (create the profile if needed):
+
+```powershell
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+& "$env:USERPROFILE\.x-cli-hop\bin\hop.exe" --shell-init | Out-String | Invoke-Expression
+```
+
+Windows PowerShell 5.1 and PowerShell 7 are supported. Configuration and history
+live under `%USERPROFILE%\.x-cli-hop`; copy mode uses `Set-Clipboard`.
+The raw executable also works from CMD, but directory changes require the
+PowerShell bridge. To update on Windows, repeat the download/extract commands
+when `hop.exe` has exited; `hop update` remains Linux/macOS-only.
+
+To build from source on Windows, install Rust with the MSVC toolchain and
+Visual Studio C++ Build Tools, then run in PowerShell:
+
+```powershell
+$env:CARGO_TARGET_DIR = Join-Path $env:USERPROFILE 'construction_side\hop\target'
+cargo test --locked --all-targets
+cargo build --release --locked
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+& "$env:CARGO_TARGET_DIR\release\hop.exe" --shell-init | Out-String | Invoke-Expression
+```
+
 ## Usage
 
 ```bash
@@ -154,7 +198,10 @@ updates release metadata, creates a dedicated release commit, and creates a
 `vX.Y.Z` tag. `make release-push` pushes `main` and tags.
 
 Pushing a `vX.Y.Z` tag triggers the GitHub Actions workflow that builds and
-attaches Linux and macOS x86_64 and aarch64 release binaries.
+attaches Linux and macOS x86_64 and aarch64 release binaries, plus a Windows
+x86_64 ZIP. Pushes to `main`, pull requests, and manual workflow runs build the
+same artifacts without publishing a release. Native targets run Rust tests;
+Windows also checks directory changes and history in PowerShell 5.1 and 7.
 
 ## Kernel sync (sanity check)
 

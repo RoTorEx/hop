@@ -92,7 +92,7 @@ fn run_update(color: bool) -> ExitCode {
         Some(asset) => asset,
         None => {
             return fail(
-                "hop update currently supports Linux and macOS release builds only.",
+                "hop update supports Linux and macOS only; on Windows, download the latest hop-windows-x86_64.zip from https://github.com/RoTorEx/hop/releases/latest and replace hop.exe after it exits.",
                 color,
             );
         }
@@ -476,7 +476,7 @@ fn load_optional_project_config(path: &Path) -> Result<Option<ProjectConfig>, St
 }
 
 fn load_optional_jump_history() -> Result<JumpHistory, String> {
-    let Some(home) = env::var_os("HOME").map(PathBuf::from) else {
+    let Ok(home) = home_dir() else {
         return Ok(JumpHistory::default());
     };
     let path = history_path(&home);
@@ -488,9 +488,11 @@ fn load_optional_jump_history() -> Result<JumpHistory, String> {
 }
 
 fn home_dir() -> Result<PathBuf, String> {
-    env::var_os("HOME")
+    let variable = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    env::var_os(variable)
+        .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .ok_or_else(|| "HOME is not set; pass --root <dir>".to_owned())
+        .ok_or_else(|| format!("{variable} is not set; pass --root <dir>"))
 }
 
 fn cli_home_shortcut_path(target: &str) -> Result<Option<PathBuf>, String> {
@@ -498,7 +500,7 @@ fn cli_home_shortcut_path(target: &str) -> Result<Option<PathBuf>, String> {
         return home_dir().map(|home| Some(cli_home_path(&home)));
     }
 
-    let Some(home) = env::var_os("HOME").map(PathBuf::from) else {
+    let Ok(home) = home_dir() else {
         return Ok(None);
     };
 
@@ -663,6 +665,17 @@ fn emit_path(path: &std::path::Path, copy_path: bool, color: bool) -> ExitCode {
 
 fn copy_to_clipboard(path: &std::path::Path, color: bool) -> ExitCode {
     let value = path.display().to_string();
+    #[cfg(windows)]
+    let commands: &[(&str, &[&str])] = &[(
+        "powershell.exe",
+        &[
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "[Console]::InputEncoding = [System.Text.UTF8Encoding]::new(); Set-Clipboard -Value ([Console]::In.ReadToEnd())",
+        ],
+    )];
+    #[cfg(not(windows))]
     let commands: &[(&str, &[&str])] = &[
         ("pbcopy", &[]),
         ("wl-copy", &[]),
@@ -703,7 +716,7 @@ fn copy_to_clipboard(path: &std::path::Path, color: bool) -> ExitCode {
     }
 
     fail(
-        "Could not copy path; install pbcopy, wl-copy, xclip, or xsel.",
+        "Could not copy path; Windows requires PowerShell with Set-Clipboard; Unix requires pbcopy, wl-copy, xclip, or xsel.",
         color,
     )
 }
@@ -1200,7 +1213,7 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 {}:
     --copy-path      Copy the selected path instead of printing it
     --frequent       Rank all projects by successful jump count
-    --root <dir>      Scan a directory instead of $HOME
+    --root <dir>      Scan a directory instead of the user home
     --no-color        Disable ANSI color output
     -v, -V, --version Print version
     -h, --help        Print help
@@ -1231,6 +1244,43 @@ fn print_shell_init(binary: &Path) {
 }
 
 fn shell_init(binary: &Path) -> String {
+    if cfg!(windows) {
+        powershell_init(binary)
+    } else {
+        bash_shell_init(binary)
+    }
+}
+
+fn powershell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn powershell_init(binary: &Path) -> String {
+    let binary = powershell_quote(&binary.display().to_string());
+    format!(
+        r#"# x-cli-hop PowerShell bridge
+function global:hop {{
+    $previousEncoding = [Console]::OutputEncoding
+    try {{
+        [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+        $destination = & {binary} @args
+        $hopStatus = $LASTEXITCODE
+    }} finally {{
+        [Console]::OutputEncoding = $previousEncoding
+    }}
+    if ($hopStatus -ne 0 -or [string]::IsNullOrEmpty($destination)) {{ return }}
+    try {{
+        Set-Location -LiteralPath $destination -ErrorAction Stop
+    }} catch {{
+        Write-Error "hop: invalid destination: $destination"
+        return
+    }}
+    & {binary} --record-jump $destination --no-color
+}}"#,
+    )
+}
+
+fn bash_shell_init(binary: &Path) -> String {
     let binary_dir = binary.parent().unwrap_or_else(|| Path::new("."));
     let binary = shell_quote(&binary.display().to_string());
     let binary_dir = shell_quote(&binary_dir.display().to_string());
@@ -1289,6 +1339,17 @@ fn installation_home(binary: &Path) -> Option<&Path> {
 }
 
 fn shell_activation_command() -> String {
+    if cfg!(windows) {
+        return env::current_exe().map_or_else(
+            |_| "hop.exe --shell-init | Out-String | Invoke-Expression".to_owned(),
+            |binary| {
+                format!(
+                    "& {} --shell-init | Out-String | Invoke-Expression",
+                    powershell_quote(&binary.display().to_string())
+                )
+            },
+        );
+    }
     env::current_exe()
         .ok()
         .and_then(|binary| installation_home(&binary).map(|home| home.join("init.zsh")))
@@ -1320,7 +1381,7 @@ mod tests {
 
     #[test]
     fn shell_init_removes_legacy_j_and_wraps_only_hop() {
-        let init = shell_init(Path::new("/opt/hop home/bin/hop"));
+        let init = bash_shell_init(Path::new("/opt/hop home/bin/hop"));
 
         assert!(init.contains("_hop_bin_dir='/opt/hop home/bin'"));
         assert!(init.contains("unalias j"));

@@ -1,7 +1,10 @@
 name: Release
 
 on:
+  workflow_dispatch:
+  pull_request:
   push:
+    branches: [main]
     tags:
       - "v*.*.*"
 
@@ -13,6 +16,9 @@ jobs:
     name: Build ${{ matrix.name }} release binary
     env:
       CARGO_TARGET_DIR: target
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +35,10 @@ jobs:
             os: macos-15-intel
             target: x86_64-apple-darwin
             archive: hop-macos-x86_64.tar.gz
+          - name: Windows x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: hop-windows-x86_64.zip
           - name: macOS aarch64
             os: macos-15
             target: aarch64-apple-darwin
@@ -49,12 +59,32 @@ jobs:
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
 
+      - name: Test native targets
+        if: matrix.target != 'aarch64-unknown-linux-gnu'
+        run: cargo test --locked --all-targets --target "${{ matrix.target }}"
+
       - name: Build
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: cargo build --release --locked --target "${{ matrix.target }}"
 
-      - name: Package
+      - name: Windows shell smoke test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-windows.ps1 -Binary "target/${{ matrix.target }}/release/hop.exe"
+
+      - name: Windows PowerShell 5.1 smoke test
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/test-windows.ps1 -Binary "target/${{ matrix.target }}/release/hop.exe"
+
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -LiteralPath "target/${{ matrix.target }}/release/hop.exe" -DestinationPath "${{ matrix.archive }}"
+
+      - name: Package Unix
+        if: runner.os != 'Windows'
         run: |
           mkdir -p dist
           cp "target/${{ matrix.target }}/release/hop" dist/hop
@@ -67,6 +97,7 @@ jobs:
           path: ${{ matrix.archive }}
 
       - name: Publish GitHub release asset
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
