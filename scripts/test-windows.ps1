@@ -30,7 +30,9 @@ try {
     $ErrorActionPreference = 'Stop'
     if ($LASTEXITCODE -eq 0) { throw 'Invalid selector succeeded' }
     if ((Get-Location).Path -ne $project) { throw 'Failed jump changed directory' }
-    hop '~' --no-color
+    # PowerShell expands ~ to its own real home before native invocation.
+    # Pass the expanded isolated home so this test never touches runner state.
+    hop $testRoot --no-color
     if ((Get-Location).Path -ne (Join-Path $testRoot '.x-cli-hop')) { throw 'Home shortcut failed' }
     if ((Get-Content -LiteralPath (Join-Path $testRoot '.x-cli-hop\history.toml') -Raw) -ne $history) {
         throw 'Non-project actions changed history'
