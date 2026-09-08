@@ -12,7 +12,8 @@ try {
     $project = Join-Path $testRoot "work\alex's $unicodeName [1]"
     New-Item -ItemType Directory -Path (Join-Path $project '.git') -Force | Out-Null
     $junction = Join-Path $testRoot 'work\junction'
-    New-Item -ItemType Junction -Path $junction -Target $project | Out-Null
+    # A cycle also verifies that discovery does not recurse through junctions.
+    New-Item -ItemType Junction -Path $junction -Target $testRoot | Out-Null
     $installed = Join-Path $testRoot "hop's $unicodeName.exe"
     Copy-Item -LiteralPath (Resolve-Path $Binary).Path -Destination $installed
     $env:USERPROFILE = $testRoot
