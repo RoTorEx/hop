@@ -22,7 +22,7 @@ change to its shell integration.
   Linux/macOS default to the user home; `--root` explicitly limits either platform.
 - All-disk discovery runs on `hop config`; normal navigation uses the saved list
   and checks known project availability without repeating a full disk scan.
-- The default view shows configured sections and items in written order and addresses them with
+- The default view keeps section order, sorts every section's items by full path, and addresses them with
   selectors such as `A1`.
 - The frequent view globally ranks the same configured projects by successful jump
   count and addresses them with numeric positions such as `1`.

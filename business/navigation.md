@@ -22,8 +22,9 @@ warn only about configured items that disappear.
 
 ## Default view
 
-The default view uses explicit sections. Sectors and their items retain config
-order and are labeled `A` through `Z`, then `AA`, `AB`, and so on. A selector combines the
+The default view uses explicit sections. Sectors retain config order, while
+their items are sorted alphanumerically by full path. Sectors are labeled `A`
+through `Z`, then `AA`, `AB`, and so on. A selector combines the
 sector label and one-based position, for example `B2`.
 
 `hop list` renders this same view and exits successfully without prompting for

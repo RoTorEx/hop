@@ -185,8 +185,8 @@ items = [
 ```
 
 Every section requires `items`. Each item is a relative descendant of `root`
-at any depth. Sections and items appear in their written order; omitted paths
-stay hidden. Running `hop config` again preserves an explicit version 4 config
+at any depth. Sections keep their written order; items are sorted by full path.
+Omitted paths stay hidden. Running `hop config` again preserves an explicit version 4 config
 instead of overwriting manual choices. Pass `--root <dir>` when initially
 generating or migrating from a different scan root.
 Passing `--root` to normal jump mode still performs an ad hoc scan instead of

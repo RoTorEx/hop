@@ -340,7 +340,11 @@ pub fn configured_project_paths(config: &ProjectConfig) -> Vec<PathBuf> {
         return config
             .sections
             .iter()
-            .flat_map(|section| section.items.iter().map(|item| section.root.join(item)))
+            .flat_map(|section| {
+                sorted_section_items(section)
+                    .into_iter()
+                    .map(|item| section.root.join(item))
+            })
             .collect();
     }
 
@@ -371,15 +375,13 @@ pub fn configured_sectors(scan_root: &Path, config: &ProjectConfig) -> Vec<Secto
                 .parent()
                 .map(|parent| display_relative_root(scan_root, parent))
                 .unwrap_or_else(|| "/".to_owned()),
-            paths: section
-                .items
-                .iter()
+            paths: sorted_section_items(section)
+                .into_iter()
                 .map(|item| section.root.join(item))
                 .filter(|path| path.join(".git").exists())
                 .collect(),
-            item_names: section
-                .items
-                .iter()
+            item_names: sorted_section_items(section)
+                .into_iter()
                 .filter(|item| section.root.join(item).join(".git").exists())
                 .map(|item| item.display().to_string())
                 .collect(),
@@ -498,7 +500,7 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
 #[must_use]
 pub fn render_project_config(config: &ProjectConfig) -> String {
     let mut output = String::from(
-        "# hop project config\n# Every section lists exactly the projects shown by Hop.\n# Items are relative descendants of root and keep their written order.\n\n",
+        "# hop project config\n# Every section lists exactly the projects shown by Hop.\n# Items are relative descendants of root and are sorted by full path.\n\n",
     );
     output.push_str(&format!("version = {CONFIG_VERSION}\n"));
     if config.scan_all_drives {
@@ -514,7 +516,7 @@ pub fn render_project_config(config: &ProjectConfig) -> String {
         output.push_str("\n[[sections]]\nroot = \"");
         push_toml_string(&mut output, &section.root.display().to_string());
         output.push_str("\"\nitems = [\n");
-        for item in &section.items {
+        for item in sorted_section_items(section) {
             output.push_str("  \"");
             push_toml_string(&mut output, &item.display().to_string());
             output.push_str("\",\n");
@@ -652,6 +654,14 @@ fn sections_from_paths(projects: Vec<PathBuf>) -> Vec<ProjectSection> {
             ProjectSection { root, items }
         })
         .collect()
+}
+
+fn sorted_section_items(section: &ProjectSection) -> Vec<&PathBuf> {
+    let mut items = section.items.iter().collect::<Vec<_>>();
+    items.sort_by(|left, right| {
+        compare_paths_alphanumeric(&section.root.join(left), &section.root.join(right))
+    });
+    items
 }
 
 pub fn parse_choice(input: &str) -> Result<Choice, ChoiceParseError> {
@@ -1456,7 +1466,7 @@ active = true
     }
 
     #[test]
-    fn render_project_config_preserves_section_and_item_order() {
+    fn render_project_config_sorts_items_by_full_path() {
         let config = ProjectConfig {
             version: 4,
             scan_root: Some(PathBuf::from("/home/alex")),
@@ -1472,7 +1482,7 @@ active = true
         let project_2 = rendered.find("project-2").expect("project-2 rendered");
         let project_10 = rendered.find("project-10").expect("project-10 rendered");
 
-        assert!(project_10 < project_2);
+        assert!(project_2 < project_10);
     }
 
     #[test]

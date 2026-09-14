@@ -4,6 +4,10 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Changed
+
+- Sort every explicit section's items alphanumerically by full project path.
+
 ## [0.3.6] - 2026-09-14
 
 ### Changed

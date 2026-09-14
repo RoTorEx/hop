@@ -16,8 +16,8 @@ on developer machines, VMs, and VPS hosts.
    `.git`.
 5. Known noisy directories such as `construction_side`, `node_modules`,
    `target`, virtualenvs, caches, and hidden directories are skipped.
-6. Version 4 sections and items are shown in their written order. Ad hoc scans
-   retain automatic grouping by immediate parent.
+6. Version 4 sections keep their written order and items are sorted by full
+   path. Ad hoc scans retain automatic grouping by immediate parent.
 7. The interactive UI is written to stderr.
 8. Jump mode writes the selected path as the only stdout output.
 9. The `~` target is a shortcut for the hop home directory,
@@ -45,7 +45,8 @@ on developer machines, VMs, and VPS hosts.
 `hop config` creates the config by scanning `$HOME` on Unix, ready local fixed
 disks on Windows, or an explicit `--root <dir>`. It migrates legacy active paths
 to version 4 sections grouped by immediate parent. Once explicit sections exist,
-the command preserves them; the user owns selection and order through `items`.
+the command preserves them; the user owns selection, while item order is derived
+from full paths.
 
 The binary never changes directory itself because child processes cannot change
 the parent shell's working directory; the installed `hop` shell wrapper
