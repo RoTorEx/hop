@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-09-14
+
 ### Changed
 
 - Config format 4 replaces the generated flat project list with explicit,
