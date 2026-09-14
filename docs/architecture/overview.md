@@ -9,16 +9,15 @@ on developer machines, VMs, and VPS hosts.
    the binary fails with an alert to run `hop config`.
 2. Passing `--root <dir>` to jump mode performs an explicit ad hoc scan instead
    of using the config.
-3. For single-root configs, every non-config command compares the configured
-   project tree with the current folders under the scan root. All-disk configs
-   check only the availability of known projects. If projects were added or
-   removed, it prints a stderr warning and continues; `hop config` is the
-   repair command.
+3. Every non-config command checks configured project availability. Version 4
+   treats unlisted projects as intentional and warns only when configured items
+   disappear.
 4. A directory below a scan root is treated as a project when it contains
    `.git`.
 5. Known noisy directories such as `construction_side`, `node_modules`,
    `target`, virtualenvs, caches, and hidden directories are skipped.
-6. Projects are grouped by their parent folder into lettered sectors.
+6. Version 4 sections and items are shown in their written order. Ad hoc scans
+   retain automatic grouping by immediate parent.
 7. The interactive UI is written to stderr.
 8. Jump mode writes the selected path as the only stdout output.
 9. The `~` target is a shortcut for the hop home directory,
@@ -32,7 +31,7 @@ on developer machines, VMs, and VPS hosts.
     shell. The Rust CLI owns all argument parsing.
 12. If the raw executable runs from a terminal without the bridge, it reports
     that it cannot change its parent shell instead of silently printing a path.
-13. `--frequent` loads local jump history, globally sorts active projects by
+13. `--frequent` loads local jump history, globally sorts configured projects by
     descending count and alphanumeric path, and uses one-based numeric
     selectors instead of sector labels.
 14. After a project `cd` succeeds, the shell bridge invokes the executable's
@@ -43,12 +42,10 @@ on developer machines, VMs, and VPS hosts.
     with `--frequent`, and exits without reading a selection or writing a path
     to stdout.
 
-`hop config` refreshes the config file by scanning `$HOME` on Unix, ready local
-fixed disks on Windows, or an explicit `--root <dir>`, recording that scope and
-preserving manually edited
-`active = true` or `active = false` values for projects that are still present,
-adding newly discovered projects, and removing paths that are no longer
-discovered under that root.
+`hop config` creates the config by scanning `$HOME` on Unix, ready local fixed
+disks on Windows, or an explicit `--root <dir>`. It migrates legacy active paths
+to version 4 sections grouped by immediate parent. Once explicit sections exist,
+the command preserves them; the user owns selection and order through `items`.
 
 The binary never changes directory itself because child processes cannot change
 the parent shell's working directory; the installed `hop` shell wrapper
@@ -94,5 +91,6 @@ Windows default discovery queries PowerShell's
 [`System.IO.DriveInfo`](https://learn.microsoft.com/en-us/dotnet/api/system.io.driveinfo) for fixed,
 ready drive roots, validates the returned drive-letter paths, and combines
 per-root scans. No Win32 unsafe code or new dependency is needed. Config format
-3 records `scan_all_drives = true`; single-root and legacy configs retain their
-scope until explicitly refreshed. Full-drive scanning is limited to `hop config`.
+3 introduced `scan_all_drives = true`; format 4 adds explicit sections while
+retaining that scope. Full-drive scanning is limited to initial generation or
+legacy migration through `hop config`.

@@ -2,29 +2,29 @@
 
 Hop is a local-first project navigator for developers who move between Git
 working directories from bash, zsh, or Windows PowerShell. It discovers projects,
-lets the user hide irrelevant entries, presents selectable views, and delegates the final directory
+lets the user explicitly group and order relevant entries, presents selectable views, and delegates the final directory
 change to its shell integration.
 
 ## Actors and concepts
 
 - The user owns the project configuration and all locally recorded jump data.
 - A project is a discovered directory containing `.git`.
-- An active project is eligible for normal and frequent navigation views.
-- A sector groups projects that share a parent directory.
+- A configured project is listed in a section's explicit `items` array.
+- A sector is an explicitly ordered section rooted at an umbrella directory.
 - A successful jump is a directory change completed by the installed shell
   integration, not merely a selection or copied path.
 
 ## Core flows and invariants
 
-- `hop config` refreshes discovered projects while preserving the user's
-  `active` choices for paths that still exist. On Windows, its default scope is
+- `hop config` generates a first config or migrates a legacy project list. It
+  preserves an explicit version 4 config so omission remains meaningful. On Windows, its default scope is
   every ready local fixed disk so users do not need to specify drive letters.
   Linux/macOS default to the user home; `--root` explicitly limits either platform.
 - All-disk discovery runs on `hop config`; normal navigation uses the saved list
   and checks known project availability without repeating a full disk scan.
-- The default view groups active projects into sectors and addresses them with
+- The default view shows configured sections and items in written order and addresses them with
   selectors such as `A1`.
-- The frequent view globally ranks the same active projects by successful jump
+- The frequent view globally ranks the same configured projects by successful jump
   count and addresses them with numeric positions such as `1`.
 - UI and diagnostics go to stderr. A selected path is the only stdout emitted
   in jump mode, so shell integration remains safe.

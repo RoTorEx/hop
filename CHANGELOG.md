@@ -4,6 +4,13 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Changed
+
+- Config format 4 replaces the generated flat project list with explicit,
+  ordered `root + items` sections. Items may name descendants at any depth;
+  omitted projects remain hidden, and `hop config` preserves manual version 4
+  choices while still generating new configs and migrating versions 1–3.
+
 ## [0.3.5] - 2026-09-09
 
 ### Changed

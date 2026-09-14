@@ -106,8 +106,9 @@ For a deliberately limited scan, `hop config --root D:\Projects` still works.
 
 After an all-disk scan, ordinary `hop` uses the saved list and checks only whether
 known projects are available. It does not scan all disks again on every jump.
-Run `hop config` after adding projects or connecting another local disk. Existing
-configs remain readable; run plain `hop config` once to switch to all-disk discovery.
+Existing version 1–3 configs remain readable and `hop config` migrates them to
+explicit sections. Once migrated, edit the section items directly; discovery
+does not re-add intentionally omitted projects.
 
 Windows PowerShell 5.1 and PowerShell 7 are supported. Configuration and history
 live under `%USERPROFILE%\.x-cli-hop`; copy mode uses `Set-Clipboard`.
@@ -156,7 +157,7 @@ interactive prompt. Add `--frequent` to print the same ranked view as
 
 `hop ~` jumps directly to the hop home directory, `~/.x-cli-hop`.
 
-`hop --frequent` shows all active projects in one list, ordered by the number
+`hop --frequent` shows all available configured projects in one list, ordered by the number
 of successful jumps. This view uses numeric selectors, so `hop --frequent 1`
 jumps to the current most-used project. Equal counts fall back to alphanumeric
 path order. Copying a path and failed directory changes do not increase the
@@ -167,22 +168,34 @@ the manually editable project config. The installed shell bridge records a jump
 only after it changes directory successfully.
 
 `hop config` scans `$HOME` on Linux/macOS or all ready local fixed disks on
-Windows, and creates or updates
-`~/.x-cli-hop/config.toml`. The config records the scan scope, preserves
-existing `active = true` or `active = false` values for projects that are still
-present, adds newly discovered projects as `active = true`, and removes projects
-that are no longer discovered under that root. Projects are written in
-alphanumeric path order. Edit `active = false` to hide a project from normal
-`hop` results. Pass `--root <dir>` to refresh from a different scan root.
+Windows and creates `~/.x-cli-hop/config.toml`. It also migrates version 1–3
+configs. Version 4 makes selection and grouping explicit:
+
+```toml
+version = 4
+scan_root = "/Users/alex"
+
+[[sections]]
+root = "/Users/alex/Documents/WorkSpace/dev/personal/cli"
+items = [
+  "hop",
+  "shelve",
+  "experiments/deep-project",
+]
+```
+
+Every section requires `items`. Each item is a relative descendant of `root`
+at any depth. Sections and items appear in their written order; omitted paths
+stay hidden. Running `hop config` again preserves an explicit version 4 config
+instead of overwriting manual choices. Pass `--root <dir>` when initially
+generating or migrating from a different scan root.
 Passing `--root` to normal jump mode still performs an ad hoc scan instead of
 using the config.
 
-For a single-root config, every non-config command checks whether the configured
-project tree still matches the current folders. An all-disk config checks only
-the availability of known projects to keep navigation fast. If projects were added or removed, hop prints a
-stderr warning and keeps running; run `hop config` again to refresh the
-config. If the config uses a custom scan root, the warning prints the matching
-`hop config --root <dir>` command.
+For a single-root explicit config, every non-config command checks whether its
+configured items still exist. Unlisted projects are intentional and do not
+cause warnings. An all-disk config checks the same known-project availability
+without rescanning every disk.
 
 Normal `hop` jump mode requires the config file. If it is missing, hop
 prints an alert and exits; run `hop config` first.

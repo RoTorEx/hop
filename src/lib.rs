@@ -9,7 +9,7 @@ pub const CONFIG_DIR_NAME: &str = ".x-cli-hop";
 pub const CONFIG_FILE_NAME: &str = "config.toml";
 pub const HISTORY_FILE_NAME: &str = "history.toml";
 
-const CONFIG_VERSION: u32 = 3;
+const CONFIG_VERSION: u32 = 4;
 const HISTORY_VERSION: u32 = 1;
 
 const SKIP_DIRS: &[&str] = &[
@@ -41,6 +41,7 @@ pub struct Sector {
     pub name: String,
     pub above: String,
     pub paths: Vec<PathBuf>,
+    pub item_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,7 +49,14 @@ pub struct ProjectConfig {
     pub version: u32,
     pub scan_root: Option<PathBuf>,
     pub scan_all_drives: bool,
+    pub sections: Vec<ProjectSection>,
     pub projects: Vec<ProjectConfigEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectSection {
+    pub root: PathBuf,
+    pub items: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -279,62 +287,136 @@ pub fn merge_project_config(
         projects.insert(path, active);
     }
 
+    let projects = sort_project_config_entries(
+        projects
+            .into_iter()
+            .map(|(path, active)| ProjectConfigEntry { path, active })
+            .collect(),
+    );
+
     ProjectConfig {
         version: CONFIG_VERSION,
         scan_root: Some(scan_root),
         scan_all_drives: false,
-        projects: sort_project_config_entries(
+        sections: sections_from_paths(
             projects
-                .into_iter()
-                .map(|(path, active)| ProjectConfigEntry { path, active })
+                .iter()
+                .filter(|project| project.active)
+                .map(|project| project.path.clone())
                 .collect(),
         ),
+        projects: Vec::new(),
     }
 }
 
 #[must_use]
 pub fn diff_project_config_tree(config: &ProjectConfig, discovered: &[PathBuf]) -> ProjectTreeDiff {
-    let configured = config
-        .projects
-        .iter()
-        .map(|project| project.path.clone())
+    let configured = configured_project_paths(config)
+        .into_iter()
         .collect::<BTreeSet<_>>();
     let discovered = discovered.iter().cloned().collect::<BTreeSet<_>>();
 
     ProjectTreeDiff {
-        unconfigured_projects: discovered.difference(&configured).cloned().collect(),
+        unconfigured_projects: if config.version >= 4 {
+            Vec::new()
+        } else {
+            discovered.difference(&configured).cloned().collect()
+        },
         stale_projects: configured.difference(&discovered).cloned().collect(),
     }
 }
 
 #[must_use]
 pub fn active_project_paths(config: &ProjectConfig) -> Vec<PathBuf> {
-    let mut paths = BTreeSet::new();
+    configured_project_paths(config)
+        .into_iter()
+        .filter(|path| path.join(".git").exists())
+        .collect()
+}
 
-    for project in &config.projects {
-        if project.active && project.path.join(".git").exists() {
-            paths.insert(project.path.clone());
-        }
+#[must_use]
+pub fn configured_project_paths(config: &ProjectConfig) -> Vec<PathBuf> {
+    if !config.sections.is_empty() || config.version >= 4 {
+        return config
+            .sections
+            .iter()
+            .flat_map(|section| section.items.iter().map(|item| section.root.join(item)))
+            .collect();
     }
 
-    paths.into_iter().collect()
+    config
+        .projects
+        .iter()
+        .filter(|project| project.active)
+        .map(|project| project.path.clone())
+        .collect()
+}
+
+#[must_use]
+pub fn configured_sectors(scan_root: &Path, config: &ProjectConfig) -> Vec<Sector> {
+    config
+        .sections
+        .iter()
+        .enumerate()
+        .map(|(index, section)| Sector {
+            label: label_for_index(index),
+            name: section
+                .root
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Misc")
+                .to_owned(),
+            above: section
+                .root
+                .parent()
+                .map(|parent| display_relative_root(scan_root, parent))
+                .unwrap_or_else(|| "/".to_owned()),
+            paths: section
+                .items
+                .iter()
+                .map(|item| section.root.join(item))
+                .filter(|path| path.join(".git").exists())
+                .collect(),
+            item_names: section
+                .items
+                .iter()
+                .filter(|item| section.root.join(item).join(".git").exists())
+                .map(|item| item.display().to_string())
+                .collect(),
+        })
+        .collect()
 }
 
 pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
     let mut version = None;
     let mut scan_root = None;
     let mut scan_all_drives = false;
+    let mut sections = Vec::new();
     let mut projects = Vec::new();
+    let mut current_section: Option<ProjectSectionDraft> = None;
     let mut current_project: Option<ProjectConfigEntryDraft> = None;
 
-    for (line_index, raw_line) in contents.lines().enumerate() {
-        let line_number = line_index + 1;
-        let line = strip_toml_comment(raw_line).trim();
+    for (line_number, logical_line) in project_config_logical_lines(contents)? {
+        let line = logical_line.trim();
         if line.is_empty() {
             continue;
         }
 
+        if line == "[[sections]]" {
+            if let Some(section) = current_section.take() {
+                finish_project_section(section, &mut sections, line_number)?;
+            }
+            if let Some(project) = current_project.take() {
+                finish_project_config_entry(project, &mut projects, line_number)?;
+            }
+            current_section = Some(ProjectSectionDraft::default());
+            continue;
+        }
+
         if line == "[[projects]]" {
+            if let Some(section) = current_section.take() {
+                finish_project_section(section, &mut sections, line_number)?;
+            }
             if let Some(project) = current_project.take() {
                 finish_project_config_entry(project, &mut projects, line_number)?;
             }
@@ -348,15 +430,29 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
         let key = raw_key.trim();
         let value = raw_value.trim();
 
-        match current_project.as_mut() {
-            Some(project) => match key {
+        match (current_section.as_mut(), current_project.as_mut()) {
+            (Some(section), None) => match key {
+                "root" => {
+                    section.root = Some(PathBuf::from(parse_toml_string(value, line_number)?))
+                }
+                "items" => {
+                    section.items = Some(
+                        parse_toml_string_array(value, line_number)?
+                            .into_iter()
+                            .map(PathBuf::from)
+                            .collect(),
+                    )
+                }
+                _ => return Err(format!("line {line_number}: unknown section key `{key}`")),
+            },
+            (None, Some(project)) => match key {
                 "path" => {
                     project.path = Some(PathBuf::from(parse_toml_string(value, line_number)?))
                 }
                 "active" => project.active = Some(parse_toml_bool(value, line_number)?),
                 _ => return Err(format!("line {line_number}: unknown project key `{key}`")),
             },
-            None => match key {
+            (None, None) => match key {
                 "version" => version = Some(parse_config_version(value, line_number)?),
                 "scan_all_drives" => scan_all_drives = parse_toml_bool(value, line_number)?,
                 "scan_root" => {
@@ -364,9 +460,13 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
                 }
                 _ => return Err(format!("line {line_number}: unknown config key `{key}`")),
             },
+            (Some(_), Some(_)) => unreachable!("config parser has one active table"),
         }
     }
 
+    if let Some(section) = current_section {
+        finish_project_section(section, &mut sections, contents.lines().count() + 1)?;
+    }
     if let Some(project) = current_project {
         finish_project_config_entry(project, &mut projects, contents.lines().count() + 1)?;
     }
@@ -379,11 +479,18 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
     if scan_all_drives && scan_root.is_some() {
         return Err("scan_all_drives and scan_root cannot be combined".to_owned());
     }
+    if version >= 4 && !projects.is_empty() {
+        return Err("config version 4 uses [[sections]], not [[projects]]".to_owned());
+    }
+    if version < 4 && !sections.is_empty() {
+        return Err("[[sections]] require config version = 4".to_owned());
+    }
 
     Ok(ProjectConfig {
         version,
         scan_root,
         scan_all_drives,
+        sections,
         projects,
     })
 }
@@ -391,7 +498,7 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
 #[must_use]
 pub fn render_project_config(config: &ProjectConfig) -> String {
     let mut output = String::from(
-        "# hop project config\n# Set active = false to hide a project.\n# Run hop config to refresh after adding or removing projects.\n\n",
+        "# hop project config\n# Every section lists exactly the projects shown by Hop.\n# Items are relative descendants of root and keep their written order.\n\n",
     );
     output.push_str(&format!("version = {CONFIG_VERSION}\n"));
     if config.scan_all_drives {
@@ -403,13 +510,16 @@ pub fn render_project_config(config: &ProjectConfig) -> String {
         output.push_str("\"\n");
     }
 
-    let projects = sorted_project_config_entries(&config.projects);
-    for project in projects {
-        output.push_str("\n[[projects]]\npath = \"");
-        push_toml_string(&mut output, &project.path.display().to_string());
-        output.push_str("\"\nactive = ");
-        output.push_str(if project.active { "true" } else { "false" });
-        output.push('\n');
+    for section in &config.sections {
+        output.push_str("\n[[sections]]\nroot = \"");
+        push_toml_string(&mut output, &section.root.display().to_string());
+        output.push_str("\"\nitems = [\n");
+        for item in &section.items {
+            output.push_str("  \"");
+            push_toml_string(&mut output, &item.display().to_string());
+            output.push_str("\",\n");
+        }
+        output.push_str("]\n");
     }
 
     output
@@ -515,7 +625,31 @@ pub fn group_projects(scan_root: &Path, projects: Vec<PathBuf>) -> Vec<Sector> {
                 name,
                 above,
                 paths,
+                item_names: Vec::new(),
             }
+        })
+        .collect()
+}
+
+fn sections_from_paths(projects: Vec<PathBuf>) -> Vec<ProjectSection> {
+    let mut grouped: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
+    for project in projects {
+        let Some(root) = project.parent() else {
+            continue;
+        };
+        let Some(item) = project.file_name() else {
+            continue;
+        };
+        grouped
+            .entry(root.to_path_buf())
+            .or_default()
+            .push(PathBuf::from(item));
+    }
+    grouped
+        .into_iter()
+        .map(|(root, mut items)| {
+            items.sort_by(|left, right| compare_paths_alphanumeric(left, right));
+            ProjectSection { root, items }
         })
         .collect()
 }
@@ -589,12 +723,6 @@ fn index_for_label(label: &str) -> Option<usize> {
 }
 
 fn sort_project_config_entries(mut projects: Vec<ProjectConfigEntry>) -> Vec<ProjectConfigEntry> {
-    projects.sort_by(|left, right| compare_paths_alphanumeric(&left.path, &right.path));
-    projects
-}
-
-fn sorted_project_config_entries(projects: &[ProjectConfigEntry]) -> Vec<&ProjectConfigEntry> {
-    let mut projects = projects.iter().collect::<Vec<_>>();
     projects.sort_by(|left, right| compare_paths_alphanumeric(&left.path, &right.path));
     projects
 }
@@ -682,6 +810,12 @@ struct ProjectConfigEntryDraft {
 }
 
 #[derive(Default)]
+struct ProjectSectionDraft {
+    root: Option<PathBuf>,
+    items: Option<Vec<PathBuf>>,
+}
+
+#[derive(Default)]
 struct JumpHistoryEntryDraft {
     path: Option<PathBuf>,
     jumps: Option<u64>,
@@ -700,6 +834,39 @@ fn finish_project_config_entry(
         path,
         active: project.active.unwrap_or(true),
     });
+    Ok(())
+}
+
+fn finish_project_section(
+    section: ProjectSectionDraft,
+    sections: &mut Vec<ProjectSection>,
+    line_number: usize,
+) -> Result<(), String> {
+    let root = section
+        .root
+        .ok_or_else(|| format!("line {line_number}: section is missing root"))?;
+    let items = section
+        .items
+        .ok_or_else(|| format!("line {line_number}: section is missing items"))?;
+    for item in &items {
+        if item.as_os_str().is_empty()
+            || item.is_absolute()
+            || item.components().any(|part| {
+                matches!(
+                    part,
+                    std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            })
+        {
+            return Err(format!(
+                "line {line_number}: section item must be a relative descendant: {}",
+                item.display()
+            ));
+        }
+    }
+    sections.push(ProjectSection { root, items });
     Ok(())
 }
 
@@ -773,6 +940,103 @@ fn parse_toml_string(value: &str, line_number: usize) -> Result<String, String> 
     }
 
     Ok(output)
+}
+
+fn parse_toml_string_array(value: &str, line_number: usize) -> Result<Vec<String>, String> {
+    let value = value.trim();
+    if !value.starts_with('[') || !value.ends_with(']') {
+        return Err(format!(
+            "line {line_number}: items must be an array of strings"
+        ));
+    }
+    let mut items = Vec::new();
+    let mut rest = value[1..value.len() - 1].trim();
+    while !rest.is_empty() {
+        if !rest.starts_with('"') {
+            return Err(format!(
+                "line {line_number}: items must contain quoted strings"
+            ));
+        }
+        let mut escaped = false;
+        let mut closing = None;
+        for (index, ch) in rest[1..].char_indices() {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                closing = Some(index + 1);
+                break;
+            }
+        }
+        let closing = closing.ok_or_else(|| format!("line {line_number}: unterminated item"))?;
+        items.push(parse_toml_string(&rest[..=closing], line_number)?);
+        rest = rest[closing + 1..].trim_start();
+        if rest.is_empty() {
+            break;
+        }
+        let Some(after_comma) = rest.strip_prefix(',') else {
+            return Err(format!("line {line_number}: expected comma between items"));
+        };
+        rest = after_comma.trim_start();
+    }
+    Ok(items)
+}
+
+fn project_config_logical_lines(contents: &str) -> Result<Vec<(usize, String)>, String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    let mut start_line = 0;
+    let mut array_depth = 0i32;
+
+    for (index, raw_line) in contents.lines().enumerate() {
+        let line_number = index + 1;
+        let line = strip_toml_comment(raw_line).trim();
+        if current.is_empty() && line.is_empty() {
+            continue;
+        }
+        if current.is_empty() {
+            start_line = line_number;
+        } else {
+            current.push(' ');
+        }
+        current.push_str(line);
+        array_depth += bracket_delta(line);
+        if array_depth < 0 {
+            return Err(format!("line {line_number}: unexpected closing bracket"));
+        }
+        if array_depth == 0 {
+            lines.push((start_line, std::mem::take(&mut current)));
+        }
+    }
+    if !current.is_empty() {
+        return Err(format!("line {start_line}: unterminated array"));
+    }
+    Ok(lines)
+}
+
+fn bracket_delta(line: &str) -> i32 {
+    let mut delta = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    for ch in line.chars() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+        } else if ch == '"' {
+            in_string = true;
+        } else if ch == '[' {
+            delta += 1;
+        } else if ch == ']' {
+            delta -= 1;
+        }
+    }
+    delta
 }
 
 fn parse_unicode_escape(
@@ -1003,16 +1267,15 @@ mod tests {
     #[test]
     fn parses_and_renders_project_config() {
         let contents = r#"# hop project config
-version = 2
+version = 4
 scan_root = "/home/alex"
 
-[[projects]]
-path = "/home/alex/work/hop"
-active = false
-
-[[projects]]
-path = "/tmp/with \"quote\" and # hash"
-active = true # trailing comments are fine
+[[sections]]
+root = "/home/alex/work"
+items = [
+  "deep/tools",
+  "hop",
+]
 "#;
 
         let config = parse_project_config(contents).expect("parse config");
@@ -1020,19 +1283,14 @@ active = true # trailing comments are fine
         assert_eq!(
             config,
             ProjectConfig {
-                version: 2,
+                version: 4,
                 scan_root: Some(PathBuf::from("/home/alex")),
                 scan_all_drives: false,
-                projects: vec![
-                    ProjectConfigEntry {
-                        path: PathBuf::from("/home/alex/work/hop"),
-                        active: false,
-                    },
-                    ProjectConfigEntry {
-                        path: PathBuf::from("/tmp/with \"quote\" and # hash"),
-                        active: true,
-                    },
-                ],
+                sections: vec![ProjectSection {
+                    root: PathBuf::from("/home/alex/work"),
+                    items: vec![PathBuf::from("deep/tools"), PathBuf::from("hop")],
+                }],
+                projects: Vec::new(),
             }
         );
 
@@ -1054,10 +1312,11 @@ active = true # trailing comments are fine
             version: CONFIG_VERSION,
             scan_root: None,
             scan_all_drives: true,
-            projects: vec![ProjectConfigEntry {
-                path: PathBuf::from(r"D:\Projects\hop"),
-                active: false,
+            sections: vec![ProjectSection {
+                root: PathBuf::from(r"D:\Projects"),
+                items: vec![PathBuf::from("hop")],
             }],
+            projects: Vec::new(),
         };
         assert_eq!(
             parse_project_config(&render_project_config(&config)).unwrap(),
@@ -1138,6 +1397,7 @@ active = true
             version: 1,
             scan_root: Some(PathBuf::from("/home/alex")),
             scan_all_drives: false,
+            sections: Vec::new(),
             projects: vec![
                 ProjectConfigEntry {
                     path: PathBuf::from("/home/alex/work/hop"),
@@ -1160,18 +1420,13 @@ active = true
         assert_eq!(merged.version, CONFIG_VERSION);
         assert_eq!(merged.scan_root, Some(scan_root));
         assert_eq!(
-            merged.projects,
-            vec![
-                ProjectConfigEntry {
-                    path: PathBuf::from("/home/alex/work/hop"),
-                    active: false,
-                },
-                ProjectConfigEntry {
-                    path: PathBuf::from("/home/alex/work/new-project"),
-                    active: true,
-                },
-            ]
+            merged.sections,
+            vec![ProjectSection {
+                root: PathBuf::from("/home/alex/work"),
+                items: vec![PathBuf::from("new-project")],
+            }]
         );
+        assert!(merged.projects.is_empty());
     }
 
     #[test]
@@ -1180,6 +1435,7 @@ active = true
             version: 1,
             scan_root: None,
             scan_all_drives: false,
+            sections: Vec::new(),
             projects: vec![ProjectConfigEntry {
                 path: PathBuf::from("/home/alex/work/project-10"),
                 active: false,
@@ -1194,49 +1450,29 @@ active = true
         let merged = merge_project_config(Some(existing), PathBuf::from("/home/alex"), discovered);
 
         assert_eq!(
-            merged
-                .projects
-                .iter()
-                .map(|project| project.path.clone())
-                .collect::<Vec<_>>(),
-            vec![
-                PathBuf::from("/home/alex/work/project-1"),
-                PathBuf::from("/home/alex/work/project-2"),
-                PathBuf::from("/home/alex/work/project-10"),
-            ]
+            merged.sections[0].items,
+            vec![PathBuf::from("project-1"), PathBuf::from("project-2"),]
         );
-        assert!(!merged.projects[2].active);
     }
 
     #[test]
-    fn render_project_config_sorts_projects_alphanumerically() {
+    fn render_project_config_preserves_section_and_item_order() {
         let config = ProjectConfig {
-            version: 2,
+            version: 4,
             scan_root: Some(PathBuf::from("/home/alex")),
             scan_all_drives: false,
-            projects: vec![
-                ProjectConfigEntry {
-                    path: PathBuf::from("/home/alex/work/project-10"),
-                    active: true,
-                },
-                ProjectConfigEntry {
-                    path: PathBuf::from("/home/alex/work/project-2"),
-                    active: true,
-                },
-                ProjectConfigEntry {
-                    path: PathBuf::from("/home/alex/work/project-1"),
-                    active: true,
-                },
-            ],
+            sections: vec![ProjectSection {
+                root: PathBuf::from("/home/alex/work"),
+                items: vec![PathBuf::from("project-10"), PathBuf::from("project-2")],
+            }],
+            projects: Vec::new(),
         };
 
         let rendered = render_project_config(&config);
-        let project_1 = rendered.find("project-1").expect("project-1 rendered");
         let project_2 = rendered.find("project-2").expect("project-2 rendered");
         let project_10 = rendered.find("project-10").expect("project-10 rendered");
 
-        assert!(project_1 < project_2);
-        assert!(project_2 < project_10);
+        assert!(project_10 < project_2);
     }
 
     #[test]
@@ -1252,6 +1488,7 @@ active = true
             version: 1,
             scan_root: None,
             scan_all_drives: false,
+            sections: Vec::new(),
             projects: vec![
                 ProjectConfigEntry {
                     path: active.clone(),
@@ -1279,27 +1516,42 @@ active = true
         let stale = PathBuf::from("/home/alex/work/stale");
         let unconfigured = PathBuf::from("/home/alex/work/unconfigured");
         let config = ProjectConfig {
-            version: 2,
+            version: 4,
             scan_root: Some(PathBuf::from("/home/alex")),
             scan_all_drives: false,
-            projects: vec![
-                ProjectConfigEntry {
-                    path: configured.clone(),
-                    active: true,
-                },
-                ProjectConfigEntry {
-                    path: stale.clone(),
-                    active: false,
-                },
-            ],
+            sections: vec![ProjectSection {
+                root: PathBuf::from("/home/alex/work"),
+                items: vec![PathBuf::from("configured"), PathBuf::from("stale")],
+            }],
+            projects: Vec::new(),
         };
         let discovered = vec![configured, unconfigured.clone()];
 
         let diff = diff_project_config_tree(&config, &discovered);
 
-        assert_eq!(diff.unconfigured_projects, vec![unconfigured]);
+        assert!(diff.unconfigured_projects.is_empty());
         assert_eq!(diff.stale_projects, vec![stale]);
         assert!(!diff.is_empty());
+    }
+
+    #[test]
+    fn section_items_are_required_and_must_stay_below_root() {
+        assert!(
+            parse_project_config("version = 4\n[[sections]]\nroot = \"/home/alex/work\"\n")
+                .is_err()
+        );
+        assert!(
+            parse_project_config(
+                "version = 4\n[[sections]]\nroot = \"/home/alex/work\"\nitems = [\"../other\"]\n"
+            )
+            .is_err()
+        );
+        assert!(
+            parse_project_config(
+                "version = 4\n[[sections]]\nroot = \"/home/alex/work\"\nitems = [\"/tmp/other\"]\n"
+            )
+            .is_err()
+        );
     }
 
     #[test]

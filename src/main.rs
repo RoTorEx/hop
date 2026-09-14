@@ -7,9 +7,10 @@ use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
 use hop::{
     APP_NAME, ChoiceParseError, JumpHistory, ProjectConfig, RankedProject, Sector,
-    active_project_paths, cli_home_path, config_path, diff_project_config_tree, discover_projects,
-    group_projects, history_path, load_jump_history, load_project_config, merge_project_config,
-    parse_choice, rank_projects_by_jumps, record_jump, write_project_config,
+    active_project_paths, cli_home_path, config_path, configured_project_paths, configured_sectors,
+    diff_project_config_tree, discover_projects, group_projects, history_path, load_jump_history,
+    load_project_config, merge_project_config, parse_choice, rank_projects_by_jumps, record_jump,
+    write_project_config,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -36,6 +37,13 @@ enum Command {
     Update,
     Config,
     RecordJump,
+}
+
+struct NavigationProjects {
+    root: PathBuf,
+    projects: Vec<PathBuf>,
+    sectors: Option<Vec<Sector>>,
+    config_source: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -208,16 +216,22 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
         }
     }
 
-    let (root, projects, config_source) = match projects_for_jump(&options) {
+    let navigation = match projects_for_jump(&options) {
         Ok(projects) => projects,
         Err(message) => return fail(&message, options.color),
     };
+    let NavigationProjects {
+        root,
+        projects,
+        sectors: configured_groups,
+        config_source,
+    } = navigation;
 
     if projects.is_empty() {
         if let Some(config_source) = config_source {
             return fail(
                 &format!(
-                    "No active projects found in {}; edit active values or run hop config.",
+                    "No configured projects found in {}; edit section items.",
                     config_source.display()
                 ),
                 options.color,
@@ -246,7 +260,7 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
         };
     }
 
-    let sectors = group_projects(&root, projects);
+    let sectors = configured_groups.unwrap_or_else(|| group_projects(&root, projects));
 
     if let Some(target) = options.target {
         return choose_target(&sectors, &target, options.copy_path, options.color);
@@ -348,6 +362,34 @@ fn run_config(options: Options) -> ExitCode {
     let root = options.root.unwrap_or_else(|| home.clone());
     let path = config_path(&home);
 
+    let existing = match load_optional_project_config(&path) {
+        Ok(existing) => existing,
+        Err(message) => return fail(&message, options.color),
+    };
+    if let Some(config) = existing.as_ref().filter(|config| config.version >= 4) {
+        let total = configured_project_paths(config).len();
+        eprintln!(
+            "{}",
+            paint(
+                options.color,
+                GREEN,
+                &format!(
+                    "Preserved explicit {} ({total} configured projects)",
+                    path.display()
+                ),
+            ),
+        );
+        eprintln!(
+            "{}",
+            paint(
+                options.color,
+                DIM,
+                "Edit section items to change the project list."
+            ),
+        );
+        return ExitCode::SUCCESS;
+    }
+
     let roots = if scan_all_drives {
         match local_drive_roots() {
             Ok(roots) => roots,
@@ -363,21 +405,12 @@ fn run_config(options: Options) -> ExitCode {
         }
     };
 
-    let existing = match load_optional_project_config(&path) {
-        Ok(existing) => existing,
-        Err(message) => return fail(&message, options.color),
-    };
     let mut config = merge_project_config(existing, root.clone(), projects);
     if scan_all_drives {
         config.scan_root = None;
         config.scan_all_drives = true;
     }
-    let total = config.projects.len();
-    let active = config
-        .projects
-        .iter()
-        .filter(|project| project.active)
-        .count();
+    let total = configured_project_paths(&config).len();
 
     if let Err(error) = write_project_config(&path, &config) {
         return fail(
@@ -391,7 +424,7 @@ fn run_config(options: Options) -> ExitCode {
         paint(
             options.color,
             GREEN,
-            &format!("Updated {} ({active}/{total} active)", path.display()),
+            &format!("Updated {} ({total} configured projects)", path.display()),
         ),
     );
     eprintln!(
@@ -399,19 +432,22 @@ fn run_config(options: Options) -> ExitCode {
         paint(
             options.color,
             DIM,
-            "Edit active = false to hide projects from hop.",
+            "Edit section items to choose and order projects.",
         ),
     );
     ExitCode::SUCCESS
 }
 
-fn projects_for_jump(
-    options: &Options,
-) -> Result<(PathBuf, Vec<PathBuf>, Option<PathBuf>), String> {
+fn projects_for_jump(options: &Options) -> Result<NavigationProjects, String> {
     if let Some(root) = &options.root {
         let projects = discover_projects(root)
             .map_err(|error| format!("Cannot scan {}: {error}", root.display()))?;
-        return Ok((root.clone(), projects, None));
+        return Ok(NavigationProjects {
+            root: root.clone(),
+            projects,
+            sectors: None,
+            config_source: None,
+        });
     }
 
     let home = home_dir()?;
@@ -419,7 +455,13 @@ fn projects_for_jump(
     if path.exists() {
         let config = load_project_config(&path)
             .map_err(|error| format!("Cannot read {}: {error}", path.display()))?;
-        return Ok((home, active_project_paths(&config), Some(path)));
+        let sectors = (config.version >= 4).then(|| configured_sectors(&home, &config));
+        return Ok(NavigationProjects {
+            root: home,
+            projects: active_project_paths(&config),
+            sectors,
+            config_source: Some(path),
+        });
     }
 
     Err(format!(
@@ -464,15 +506,14 @@ fn warn_if_project_config_needs_refresh(options: &Options) {
 
     // A full disk walk belongs to the explicit refresh, not every shell jump.
     if config.scan_all_drives {
-        let missing = config
-            .projects
+        let missing = configured_project_paths(&config)
             .iter()
-            .filter(|project| !project.path.join(".git").exists())
+            .filter(|project| !project.join(".git").exists())
             .count();
         if missing > 0 {
             config_warning(
                 &format!(
-                    "{missing} configured {} unavailable; run `hop config` to refresh the list.",
+                    "{missing} configured {} unavailable; edit section items.",
                     project_word(missing)
                 ),
                 options.color,
@@ -504,7 +545,7 @@ fn warn_if_project_config_needs_refresh(options: &Options) {
 
     config_warning(
         &format!(
-            "Project tree differs from config: {}. Run {} to refresh it.",
+            "Project tree differs from config: {}. Edit section items; {} only generates or migrates a config.",
             project_tree_diff_summary(&diff),
             refresh_command(scan_root, &home),
         ),
@@ -1148,10 +1189,14 @@ fn render(sectors: &[Sector], color: bool) {
         );
 
         for (index, path) in sector.paths.iter().enumerate() {
-            let name = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("?");
+            let name = sector.item_names.get(index).map_or_else(
+                || {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("?")
+                },
+                String::as_str,
+            );
             eprintln!(
                 "     {} {}",
                 paint(color, CYAN, &format!("{:>2})", index + 1)),
@@ -1293,7 +1338,7 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 
 {}:
     list             Print the project list without prompting for a selection
-    config           Create or update the project config
+    config           Create or migrate the project config
     update           Update this executable from the latest GitHub release
 
 {}:
@@ -1470,7 +1515,7 @@ mod tests {
     }
 
     #[test]
-    fn config_discovery_combines_roots_and_preserves_hidden_choices() {
+    fn config_discovery_combines_roots_and_migrates_hidden_choices() {
         let root = env::temp_dir().join(format!(
             "hop-multi-root-{}-{}",
             std::process::id(),
@@ -1485,21 +1530,22 @@ mod tests {
         let second_project = second.join("another");
         fs::create_dir_all(first_project.join(".git")).unwrap();
         fs::create_dir_all(second_project.join(".git")).unwrap();
-        let mut existing = merge_project_config(None, first.clone(), vec![first_project.clone()]);
-        existing.projects[0].active = false;
+        let existing = ProjectConfig {
+            version: 3,
+            scan_root: Some(first.clone()),
+            scan_all_drives: false,
+            sections: Vec::new(),
+            projects: vec![hop::ProjectConfigEntry {
+                path: first_project.clone(),
+                active: false,
+            }],
+        };
         let projects =
             discover_config_projects(&[first.clone(), second, first.clone()], false, false)
                 .unwrap();
         assert_eq!(projects, vec![first_project.clone(), second_project]);
         let merged = merge_project_config(Some(existing), first.clone(), projects);
-        assert!(
-            !merged
-                .projects
-                .iter()
-                .find(|p| p.path == first_project)
-                .unwrap()
-                .active
-        );
+        assert!(!configured_project_paths(&merged).contains(&first_project));
         assert!(discover_config_projects(&[first, root.join("missing")], false, false).is_err());
         fs::remove_dir_all(root).unwrap();
     }
