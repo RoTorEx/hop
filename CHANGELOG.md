@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-09-26
+
 ### Fixed
 
 - `hop config` discovers and adds new Git projects to existing explicit sections,
