@@ -1684,11 +1684,16 @@ active = true
 
     #[test]
     fn excluded_projects_round_trip_and_require_absolute_paths() {
+        let absolute = if cfg!(windows) {
+            PathBuf::from(r"C:\Users\alex\hidden")
+        } else {
+            PathBuf::from("/home/alex/hidden")
+        };
         let config = ProjectConfig {
             version: 4,
             scan_root: Some(PathBuf::from("/home/alex")),
             scan_all_drives: false,
-            excluded: vec![PathBuf::from("/home/alex/hidden")],
+            excluded: vec![absolute],
             sections: Vec::new(),
             projects: Vec::new(),
         };

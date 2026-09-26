@@ -4,6 +4,10 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Fixed
+
+- Verify excluded project paths using a native absolute path on Windows too.
+
 ## [0.3.8] - 2026-09-26
 
 ### Fixed
