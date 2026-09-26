@@ -12,13 +12,16 @@ folder default. An explicit `--root` selects a single directory on any platform.
 The config records either a single scan root or `scan_all_drives = true`.
 Config format version 4 adds ordered `[[sections]]`, each with a `root` and a
 required `items` array. Items are relative descendants at any depth. Versions
-1–3 remain readable and `hop config` migrates their active paths. Once version
-4 exists, `hop config` preserves it rather than re-adding omitted projects.
+1–3 remain readable and `hop config` migrates their active paths. For version 4,
+`hop config` rescans the saved scope and adds new projects to the deepest matching
+section, or creates a section if none matches. Existing section order and items
+remain intact. Paths in the top-level `excluded` array stay hidden on refresh;
+removing an item without excluding it only hides it until the next refresh.
 If drive enumeration or scanning a selected root fails, the config is not written.
 
 For all-disk configs, ordinary commands check only configured availability.
-Single-root version 4 configs also treat unlisted projects as intentional and
-warn only about configured items that disappear.
+Single-root configs warn when new projects are discovered or configured items
+disappear. A refresh keeps unavailable configured items for later recovery.
 
 ## Default view
 

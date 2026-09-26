@@ -9,15 +9,17 @@ change to its shell integration.
 
 - The user owns the project configuration and all locally recorded jump data.
 - A project is a discovered directory containing `.git`.
-- A configured project is listed in a section's explicit `items` array.
+- A configured project is listed in a section's `items` array; an `excluded`
+  project stays hidden when the config is refreshed.
 - A sector is an explicitly ordered section rooted at an umbrella directory.
 - A successful jump is a directory change completed by the installed shell
   integration, not merely a selection or copied path.
 
 ## Core flows and invariants
 
-- `hop config` generates a first config or migrates a legacy project list. It
-  preserves an explicit version 4 config so omission remains meaningful. On Windows, its default scope is
+- `hop config` generates, migrates, or refreshes the project list. Refreshing
+  adds discovered Git projects while preserving existing sections and entries;
+  explicit `excluded` paths remain hidden. On Windows, its default scope is
   every ready local fixed disk so users do not need to specify drive letters.
   Linux/macOS default to the user home; `--root` explicitly limits either platform.
 - All-disk discovery runs on `hop config`; normal navigation uses the saved list

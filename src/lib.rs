@@ -49,6 +49,7 @@ pub struct ProjectConfig {
     pub version: u32,
     pub scan_root: Option<PathBuf>,
     pub scan_all_drives: bool,
+    pub excluded: Vec<PathBuf>,
     pub sections: Vec<ProjectSection>,
     pub projects: Vec<ProjectConfigEntry>,
 }
@@ -298,6 +299,7 @@ pub fn merge_project_config(
         version: CONFIG_VERSION,
         scan_root: Some(scan_root),
         scan_all_drives: false,
+        excluded: Vec::new(),
         sections: sections_from_paths(
             projects
                 .iter()
@@ -309,6 +311,58 @@ pub fn merge_project_config(
     }
 }
 
+/// Refresh an explicit config without changing its section order or existing entries.
+/// Discovered projects omitted from `excluded` join the deepest matching section;
+/// projects outside all sections form new sections at the end.
+#[must_use]
+pub fn refresh_project_config(
+    mut config: ProjectConfig,
+    discovered: Vec<PathBuf>,
+) -> ProjectConfig {
+    let configured = configured_project_paths(&config)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let excluded = config.excluded.iter().collect::<BTreeSet<_>>();
+    let mut new_sections = Vec::new();
+
+    for path in discovered {
+        if configured.contains(&path) || excluded.contains(&path) {
+            continue;
+        }
+        let matching_section = config
+            .sections
+            .iter()
+            .enumerate()
+            .filter_map(|(index, section)| {
+                path.strip_prefix(&section.root)
+                    .ok()
+                    .filter(|relative| !relative.as_os_str().is_empty())
+                    .map(|relative| {
+                        (
+                            index,
+                            section.root.components().count(),
+                            relative.to_path_buf(),
+                        )
+                    })
+            })
+            .max_by_key(|(_, depth, _)| *depth);
+        if let Some((index, _, relative)) = matching_section {
+            config.sections[index].items.push(relative);
+        } else {
+            new_sections.push(path);
+        }
+    }
+
+    config.sections.extend(sections_from_paths(new_sections));
+    for section in &mut config.sections {
+        section.items.sort_by(|left, right| {
+            compare_paths_alphanumeric(&section.root.join(left), &section.root.join(right))
+        });
+        section.items.dedup();
+    }
+    config
+}
+
 #[must_use]
 pub fn diff_project_config_tree(config: &ProjectConfig, discovered: &[PathBuf]) -> ProjectTreeDiff {
     let configured = configured_project_paths(config)
@@ -316,12 +370,13 @@ pub fn diff_project_config_tree(config: &ProjectConfig, discovered: &[PathBuf]) 
         .collect::<BTreeSet<_>>();
     let discovered = discovered.iter().cloned().collect::<BTreeSet<_>>();
 
+    let excluded = config.excluded.iter().cloned().collect::<BTreeSet<_>>();
     ProjectTreeDiff {
-        unconfigured_projects: if config.version >= 4 {
-            Vec::new()
-        } else {
-            discovered.difference(&configured).cloned().collect()
-        },
+        unconfigured_projects: discovered
+            .difference(&configured)
+            .filter(|path| !excluded.contains(*path))
+            .cloned()
+            .collect(),
         stale_projects: configured.difference(&discovered).cloned().collect(),
     }
 }
@@ -393,6 +448,7 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
     let mut version = None;
     let mut scan_root = None;
     let mut scan_all_drives = false;
+    let mut excluded = Vec::new();
     let mut sections = Vec::new();
     let mut projects = Vec::new();
     let mut current_section: Option<ProjectSectionDraft> = None;
@@ -460,6 +516,12 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
                 "scan_root" => {
                     scan_root = Some(PathBuf::from(parse_toml_string(value, line_number)?))
                 }
+                "excluded" => {
+                    excluded = parse_toml_string_array(value, line_number)?
+                        .into_iter()
+                        .map(PathBuf::from)
+                        .collect()
+                }
                 _ => return Err(format!("line {line_number}: unknown config key `{key}`")),
             },
             (Some(_), Some(_)) => unreachable!("config parser has one active table"),
@@ -487,11 +549,18 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
     if version < 4 && !sections.is_empty() {
         return Err("[[sections]] require config version = 4".to_owned());
     }
+    if version < 4 && !excluded.is_empty() {
+        return Err("excluded requires config version = 4".to_owned());
+    }
+    if excluded.iter().any(|path: &PathBuf| !path.is_absolute()) {
+        return Err("excluded paths must be absolute".to_owned());
+    }
 
     Ok(ProjectConfig {
         version,
         scan_root,
         scan_all_drives,
+        excluded,
         sections,
         projects,
     })
@@ -510,6 +579,15 @@ pub fn render_project_config(config: &ProjectConfig) -> String {
         output.push_str("scan_root = \"");
         push_toml_string(&mut output, &scan_root.display().to_string());
         output.push_str("\"\n");
+    }
+    if !config.excluded.is_empty() {
+        output.push_str("excluded = [\n");
+        for path in &config.excluded {
+            output.push_str("  \"");
+            push_toml_string(&mut output, &path.display().to_string());
+            output.push_str("\",\n");
+        }
+        output.push_str("]\n");
     }
 
     for section in &config.sections {
@@ -1296,6 +1374,7 @@ items = [
                 version: 4,
                 scan_root: Some(PathBuf::from("/home/alex")),
                 scan_all_drives: false,
+                excluded: Vec::new(),
                 sections: vec![ProjectSection {
                     root: PathBuf::from("/home/alex/work"),
                     items: vec![PathBuf::from("deep/tools"), PathBuf::from("hop")],
@@ -1322,6 +1401,7 @@ items = [
             version: CONFIG_VERSION,
             scan_root: None,
             scan_all_drives: true,
+            excluded: Vec::new(),
             sections: vec![ProjectSection {
                 root: PathBuf::from(r"D:\Projects"),
                 items: vec![PathBuf::from("hop")],
@@ -1407,6 +1487,7 @@ active = true
             version: 1,
             scan_root: Some(PathBuf::from("/home/alex")),
             scan_all_drives: false,
+            excluded: Vec::new(),
             sections: Vec::new(),
             projects: vec![
                 ProjectConfigEntry {
@@ -1445,6 +1526,7 @@ active = true
             version: 1,
             scan_root: None,
             scan_all_drives: false,
+            excluded: Vec::new(),
             sections: Vec::new(),
             projects: vec![ProjectConfigEntry {
                 path: PathBuf::from("/home/alex/work/project-10"),
@@ -1471,6 +1553,7 @@ active = true
             version: 4,
             scan_root: Some(PathBuf::from("/home/alex")),
             scan_all_drives: false,
+            excluded: Vec::new(),
             sections: vec![ProjectSection {
                 root: PathBuf::from("/home/alex/work"),
                 items: vec![PathBuf::from("project-10"), PathBuf::from("project-2")],
@@ -1498,6 +1581,7 @@ active = true
             version: 1,
             scan_root: None,
             scan_all_drives: false,
+            excluded: Vec::new(),
             sections: Vec::new(),
             projects: vec![
                 ProjectConfigEntry {
@@ -1529,6 +1613,7 @@ active = true
             version: 4,
             scan_root: Some(PathBuf::from("/home/alex")),
             scan_all_drives: false,
+            excluded: Vec::new(),
             sections: vec![ProjectSection {
                 root: PathBuf::from("/home/alex/work"),
                 items: vec![PathBuf::from("configured"), PathBuf::from("stale")],
@@ -1539,9 +1624,79 @@ active = true
 
         let diff = diff_project_config_tree(&config, &discovered);
 
-        assert!(diff.unconfigured_projects.is_empty());
+        assert_eq!(diff.unconfigured_projects, vec![unconfigured]);
         assert_eq!(diff.stale_projects, vec![stale]);
         assert!(!diff.is_empty());
+    }
+
+    #[test]
+    fn refreshing_explicit_config_adds_new_projects_and_preserves_existing_choices() {
+        let root = PathBuf::from("/home/alex");
+        let work = root.join("work");
+        let other = root.join("other");
+        let configured = work.join("old");
+        let hidden = work.join("hidden");
+        let new = work.join("new");
+        let nested = work.join("nested/project");
+        let another = other.join("project");
+        let config = ProjectConfig {
+            version: 4,
+            scan_root: Some(root),
+            scan_all_drives: false,
+            excluded: vec![hidden.clone()],
+            sections: vec![ProjectSection {
+                root: work.clone(),
+                items: vec![PathBuf::from("old")],
+            }],
+            projects: Vec::new(),
+        };
+        let discovered = vec![
+            configured.clone(),
+            hidden.clone(),
+            new.clone(),
+            nested.clone(),
+            another.clone(),
+        ];
+
+        let refreshed = refresh_project_config(config, discovered.clone());
+        assert_eq!(refreshed.sections.len(), 2);
+        assert_eq!(refreshed.sections[0].root, work);
+        assert_eq!(
+            refreshed.sections[0].items,
+            vec![
+                PathBuf::from("nested/project"),
+                PathBuf::from("new"),
+                PathBuf::from("old"),
+            ]
+        );
+        assert_eq!(refreshed.sections[1].root, other);
+        assert_eq!(refreshed.sections[1].items, vec![PathBuf::from("project")]);
+        assert!(!configured_project_paths(&refreshed).contains(&hidden));
+        assert_eq!(
+            refresh_project_config(refreshed.clone(), discovered),
+            refreshed
+        );
+        assert!(
+            diff_project_config_tree(&refreshed, &[configured, hidden, new, nested, another])
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn excluded_projects_round_trip_and_require_absolute_paths() {
+        let config = ProjectConfig {
+            version: 4,
+            scan_root: Some(PathBuf::from("/home/alex")),
+            scan_all_drives: false,
+            excluded: vec![PathBuf::from("/home/alex/hidden")],
+            sections: Vec::new(),
+            projects: Vec::new(),
+        };
+        assert_eq!(
+            parse_project_config(&render_project_config(&config)).unwrap(),
+            config
+        );
+        assert!(parse_project_config("version = 4\nexcluded = [\"relative/path\"]\n").is_err());
     }
 
     #[test]

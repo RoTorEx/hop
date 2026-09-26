@@ -10,7 +10,7 @@ use hop::{
     active_project_paths, cli_home_path, config_path, configured_project_paths, configured_sectors,
     diff_project_config_tree, discover_projects, group_projects, history_path, load_jump_history,
     load_project_config, merge_project_config, parse_choice, rank_projects_by_jumps, record_jump,
-    write_project_config,
+    refresh_project_config, write_project_config,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -358,37 +358,24 @@ fn run_config(options: Options) -> ExitCode {
         Ok(home) => home,
         Err(message) => return fail(&message, options.color),
     };
-    let scan_all_drives = cfg!(windows) && options.root.is_none();
-    let root = options.root.unwrap_or_else(|| home.clone());
     let path = config_path(&home);
 
     let existing = match load_optional_project_config(&path) {
         Ok(existing) => existing,
         Err(message) => return fail(&message, options.color),
     };
-    if let Some(config) = existing.as_ref().filter(|config| config.version >= 4) {
-        let total = configured_project_paths(config).len();
-        eprintln!(
-            "{}",
-            paint(
-                options.color,
-                GREEN,
-                &format!(
-                    "Preserved explicit {} ({total} configured projects)",
-                    path.display()
-                ),
-            ),
-        );
-        eprintln!(
-            "{}",
-            paint(
-                options.color,
-                DIM,
-                "Edit section items to change the project list."
-            ),
-        );
-        return ExitCode::SUCCESS;
-    }
+    let scan_all_drives = options.root.is_none()
+        && existing.as_ref().map_or(cfg!(windows), |config| {
+            config.scan_all_drives || (cfg!(windows) && config.scan_root.is_none())
+        });
+    let root = options
+        .root
+        .or_else(|| {
+            existing
+                .as_ref()
+                .and_then(|config| config.scan_root.clone())
+        })
+        .unwrap_or_else(|| home.clone());
 
     let roots = if scan_all_drives {
         match local_drive_roots() {
@@ -405,10 +392,19 @@ fn run_config(options: Options) -> ExitCode {
         }
     };
 
-    let mut config = merge_project_config(existing, root.clone(), projects);
+    let previous_count = existing
+        .as_ref()
+        .map_or(0, |config| configured_project_paths(config).len());
+    let mut config = match existing {
+        Some(config) if config.version >= 4 => refresh_project_config(config, projects),
+        legacy => merge_project_config(legacy, root.clone(), projects),
+    };
     if scan_all_drives {
         config.scan_root = None;
         config.scan_all_drives = true;
+    } else {
+        config.scan_root = Some(root);
+        config.scan_all_drives = false;
     }
     let total = configured_project_paths(&config).len();
 
@@ -424,7 +420,11 @@ fn run_config(options: Options) -> ExitCode {
         paint(
             options.color,
             GREEN,
-            &format!("Updated {} ({total} configured projects)", path.display()),
+            &format!(
+                "Updated {} ({total} configured projects, {} added)",
+                path.display(),
+                total.saturating_sub(previous_count)
+            ),
         ),
     );
     eprintln!(
@@ -432,7 +432,7 @@ fn run_config(options: Options) -> ExitCode {
         paint(
             options.color,
             DIM,
-            "Edit section items to choose and order projects.",
+            "Edit section items to change grouping; add paths to `excluded` to keep them hidden.",
         ),
     );
     ExitCode::SUCCESS
@@ -530,7 +530,7 @@ fn warn_if_project_config_needs_refresh(options: &Options) {
                 &format!(
                     "Cannot check project tree against config: cannot scan {}: {error}. Run {} to refresh it.",
                     scan_root.display(),
-                    refresh_command(scan_root, &home),
+                    "`hop config`",
                 ),
                 options.color,
             );
@@ -545,9 +545,9 @@ fn warn_if_project_config_needs_refresh(options: &Options) {
 
     config_warning(
         &format!(
-            "Project tree differs from config: {}. Edit section items; {} only generates or migrates a config.",
+            "Project tree differs from config: {}. Run {} to add new projects; edit section items to remove missing projects.",
             project_tree_diff_summary(&diff),
-            refresh_command(scan_root, &home),
+            "`hop config`",
         ),
         options.color,
     );
@@ -581,17 +581,6 @@ fn project_tree_diff_summary(diff: &hop::ProjectTreeDiff) -> String {
 
 fn project_word(count: usize) -> &'static str {
     if count == 1 { "project" } else { "projects" }
-}
-
-fn refresh_command(scan_root: &Path, home: &Path) -> String {
-    if scan_root == home {
-        "`hop config`".to_owned()
-    } else {
-        format!(
-            "`hop config --root {}`",
-            shell_quote(&scan_root.display().to_string())
-        )
-    }
 }
 
 fn load_optional_project_config(path: &Path) -> Result<Option<ProjectConfig>, String> {
@@ -1338,7 +1327,7 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 
 {}:
     list             Print the project list without prompting for a selection
-    config           Create or migrate the project config
+    config           Create or refresh the project config
     update           Update this executable from the latest GitHub release
 
 {}:
@@ -1534,6 +1523,7 @@ mod tests {
             version: 3,
             scan_root: Some(first.clone()),
             scan_all_drives: false,
+            excluded: Vec::new(),
             sections: Vec::new(),
             projects: vec![hop::ProjectConfigEntry {
                 path: first_project.clone(),
@@ -1619,14 +1609,6 @@ mod tests {
         assert_eq!(
             project_tree_diff_summary(&diff),
             "2 new projects and 1 missing configured project"
-        );
-        assert_eq!(
-            refresh_command(Path::new("/srv"), Path::new("/home/alex")),
-            "`hop config --root '/srv'`"
-        );
-        assert_eq!(
-            refresh_command(Path::new("/home/alex"), Path::new("/home/alex")),
-            "`hop config`"
         );
     }
 

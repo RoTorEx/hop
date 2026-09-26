@@ -4,6 +4,13 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Fixed
+
+- `hop config` discovers and adds new Git projects to existing explicit sections,
+  including projects created after the version 4 config was first generated.
+  Existing entries and section order are preserved; `excluded` keeps deliberate
+  omissions hidden across refreshes.
+
 ## [0.3.7] - 2026-09-14
 
 ### Changed

@@ -9,9 +9,8 @@ on developer machines, VMs, and VPS hosts.
    the binary fails with an alert to run `hop config`.
 2. Passing `--root <dir>` to jump mode performs an explicit ad hoc scan instead
    of using the config.
-3. Every non-config command checks configured project availability. Version 4
-   treats unlisted projects as intentional and warns only when configured items
-   disappear.
+3. Every non-config command checks configured project availability. Single-root
+   configs also warn about newly discovered projects that are not excluded.
 4. A directory below a scan root is treated as a project when it contains
    `.git`.
 5. Known noisy directories such as `construction_side`, `node_modules`,
@@ -42,11 +41,13 @@ on developer machines, VMs, and VPS hosts.
     with `--frequent`, and exits without reading a selection or writing a path
     to stdout.
 
-`hop config` creates the config by scanning `$HOME` on Unix, ready local fixed
-disks on Windows, or an explicit `--root <dir>`. It migrates legacy active paths
-to version 4 sections grouped by immediate parent. Once explicit sections exist,
-the command preserves them; the user owns selection, while item order is derived
-from full paths.
+`hop config` creates or refreshes the config by scanning `$HOME` on Unix, ready
+local fixed disks on Windows, or the saved scan root. An explicit `--root <dir>`
+changes the scan scope. Legacy active paths migrate to version 4 sections
+grouped by immediate parent. Refresh adds discovered projects to the deepest
+matching section, preserving section order and configured paths. Top-level
+`excluded` paths are skipped. The command retains configured paths that are
+temporarily unavailable, while item order is derived from full paths.
 
 The binary never changes directory itself because child processes cannot change
 the parent shell's working directory; the installed `hop` shell wrapper

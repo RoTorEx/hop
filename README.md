@@ -107,8 +107,8 @@ For a deliberately limited scan, `hop config --root D:\Projects` still works.
 After an all-disk scan, ordinary `hop` uses the saved list and checks only whether
 known projects are available. It does not scan all disks again on every jump.
 Existing version 1–3 configs remain readable and `hop config` migrates them to
-explicit sections. Once migrated, edit the section items directly; discovery
-does not re-add intentionally omitted projects.
+explicit sections. Running `hop config` again scans for newly created projects;
+add paths to `excluded` to keep deliberate omissions hidden.
 
 Windows PowerShell 5.1 and PowerShell 7 are supported. Configuration and history
 live under `%USERPROFILE%\.x-cli-hop`; copy mode uses `Set-Clipboard`.
@@ -174,6 +174,7 @@ configs. Version 4 makes selection and grouping explicit:
 ```toml
 version = 4
 scan_root = "/Users/alex"
+excluded = ["/Users/alex/Documents/WorkSpace/dev/personal/cli/hidden-project"]
 
 [[sections]]
 root = "/Users/alex/Documents/WorkSpace/dev/personal/cli"
@@ -186,16 +187,17 @@ items = [
 
 Every section requires `items`. Each item is a relative descendant of `root`
 at any depth. Sections keep their written order; items are sorted by full path.
-Omitted paths stay hidden. Running `hop config` again preserves an explicit version 4 config
-instead of overwriting manual choices. Pass `--root <dir>` when initially
-generating or migrating from a different scan root.
+Running `hop config` again scans the saved scope and adds new Git projects to
+matching sections without removing existing entries. Put absolute paths in a
+top-level `excluded = ["/path/to/project"]` array to keep projects hidden across
+refreshes. Removing an item without excluding it hides it only until the next
+refresh. Pass `--root <dir>` to change the saved scan scope.
 Passing `--root` to normal jump mode still performs an ad hoc scan instead of
 using the config.
 
-For a single-root explicit config, every non-config command checks whether its
-configured items still exist. Unlisted projects are intentional and do not
-cause warnings. An all-disk config checks the same known-project availability
-without rescanning every disk.
+For a single-root config, every non-config command checks whether configured
+items still exist and warns when new projects are found. An all-disk config
+checks known-project availability without rescanning every disk.
 
 Normal `hop` jump mode requires the config file. If it is missing, hop
 prints an alert and exits; run `hop config` first.
