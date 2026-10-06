@@ -4,6 +4,13 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Fixed
+
+- Sort all sections by full root path and items within each section by relative
+  path, including nested components, using natural alphanumeric order. Config
+  generation, refresh, list rendering, and selectors now share this order,
+  including when the input config is manually reordered.
+
 ## [0.3.10] - 2026-10-06
 
 ### Fixed

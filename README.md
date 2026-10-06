@@ -186,12 +186,13 @@ items = [
 ```
 
 Every section requires `items`. Each item is a relative descendant of `root`
-at any depth. Sections keep their written order; items are sorted by full path.
+at any depth. Sections are sorted alphanumerically by full root path; items are sorted by
+relative path, including nested components. Numeric runs use natural order
+(`project-2` before `project-10`). The same order applies in the CLI and config.
 Running `hop config` again scans the saved scope and adds new Git projects to
 sections rooted at their immediate parent directory without removing configured
 paths. Existing nested entries are moved to those parent sections as well;
-sections emptied by this regrouping disappear. Existing roots retain their
-relative order, and new roots are appended. Put absolute paths in a
+sections emptied by this regrouping disappear. All roots, including newly discovered ones, are sorted by full path. Put absolute paths in a
 top-level `excluded = ["/path/to/project"]` array to keep projects hidden across
 refreshes. Removing an item without excluding it hides it only until the next
 refresh. Pass `--root <dir>` to change the saved scan scope.

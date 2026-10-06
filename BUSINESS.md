@@ -2,7 +2,7 @@
 
 Hop is a local-first project navigator for developers who move between Git
 working directories from bash, zsh, or Windows PowerShell. It discovers projects,
-lets the user explicitly group and order relevant entries, presents selectable views, and delegates the final directory
+lets the user select relevant entries, presents selectable views, and delegates the final directory
 change to its shell integration.
 
 ## Actors and concepts
@@ -11,7 +11,7 @@ change to its shell integration.
 - A project is a discovered directory containing `.git`.
 - A configured project is listed in a section's `items` array; an `excluded`
   project stays hidden when the config is refreshed.
-- A sector is an explicitly ordered section rooted at an umbrella directory.
+- A sector is a section rooted at a project parent directory.
 - A successful jump is a directory change completed by the installed shell
   integration, not merely a selection or copied path.
 
@@ -24,7 +24,7 @@ change to its shell integration.
   Linux/macOS default to the user home; `--root` explicitly limits either platform.
 - All-disk discovery runs on `hop config`; normal navigation uses the saved list
   and checks known project availability without repeating a full disk scan.
-- The default view keeps section order, sorts every section's items by full path, and addresses them with
+- The default view sorts sections by full root path and their items by relative path, and addresses them with
   selectors such as `A1`.
 - The frequent view globally ranks the same configured projects by successful jump
   count and addresses them with numeric positions such as `1`.

@@ -312,7 +312,7 @@ pub fn merge_project_config(
 }
 
 /// Refresh sections by immediate project parent, retaining configured paths and
-/// the relative order of existing roots. Newly needed roots are appended.
+/// sorting all roots by their full paths.
 #[must_use]
 pub fn refresh_project_config(
     mut config: ProjectConfig,
@@ -343,6 +343,7 @@ pub fn refresh_project_config(
         }
     }
     sections.extend(grouped.into_values());
+    sections.sort_by(|left, right| compare_paths_alphanumeric(&left.root, &right.root));
     config.sections = sections;
     config
 }
@@ -376,9 +377,8 @@ pub fn active_project_paths(config: &ProjectConfig) -> Vec<PathBuf> {
 #[must_use]
 pub fn configured_project_paths(config: &ProjectConfig) -> Vec<PathBuf> {
     if !config.sections.is_empty() || config.version >= 4 {
-        return config
-            .sections
-            .iter()
+        return sorted_sections(config)
+            .into_iter()
             .flat_map(|section| {
                 sorted_section_items(section)
                     .into_iter()
@@ -397,9 +397,8 @@ pub fn configured_project_paths(config: &ProjectConfig) -> Vec<PathBuf> {
 
 #[must_use]
 pub fn configured_sectors(scan_root: &Path, config: &ProjectConfig) -> Vec<Sector> {
-    config
-        .sections
-        .iter()
+    sorted_sections(config)
+        .into_iter()
         .enumerate()
         .map(|(index, section)| Sector {
             label: label_for_index(index),
@@ -553,7 +552,7 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
 #[must_use]
 pub fn render_project_config(config: &ProjectConfig) -> String {
     let mut output = String::from(
-        "# hop project config\n# Every section lists exactly the projects shown by Hop.\n# Items are relative descendants of root and are sorted by full path.\n\n",
+        "# hop project config\n# Every section lists exactly the projects shown by Hop.\n# Sections are sorted by full root path; items by relative path.\n\n",
     );
     output.push_str(&format!("version = {CONFIG_VERSION}\n"));
     if config.scan_all_drives {
@@ -574,7 +573,7 @@ pub fn render_project_config(config: &ProjectConfig) -> String {
         output.push_str("]\n");
     }
 
-    for section in &config.sections {
+    for section in sorted_sections(config) {
         output.push_str("\n[[sections]]\nroot = \"");
         push_toml_string(&mut output, &section.root.display().to_string());
         output.push_str("\"\nitems = [\n");
@@ -709,20 +708,26 @@ fn sections_from_paths(projects: Vec<PathBuf>) -> Vec<ProjectSection> {
             .or_default()
             .push(PathBuf::from(item));
     }
-    grouped
+    let mut sections = grouped
         .into_iter()
         .map(|(root, mut items)| {
             items.sort_by(|left, right| compare_paths_alphanumeric(left, right));
             ProjectSection { root, items }
         })
-        .collect()
+        .collect::<Vec<_>>();
+    sections.sort_by(|left, right| compare_paths_alphanumeric(&left.root, &right.root));
+    sections
+}
+
+fn sorted_sections(config: &ProjectConfig) -> Vec<&ProjectSection> {
+    let mut sections = config.sections.iter().collect::<Vec<_>>();
+    sections.sort_by(|left, right| compare_paths_alphanumeric(&left.root, &right.root));
+    sections
 }
 
 fn sorted_section_items(section: &ProjectSection) -> Vec<&PathBuf> {
     let mut items = section.items.iter().collect::<Vec<_>>();
-    items.sort_by(|left, right| {
-        compare_paths_alphanumeric(&section.root.join(left), &section.root.join(right))
-    });
+    items.sort_by(|left, right| compare_paths_alphanumeric(left, right));
     items
 }
 
@@ -1553,6 +1558,86 @@ active = true
     }
 
     #[test]
+    fn config_and_navigation_sort_full_roots_and_nested_relative_items() {
+        let root = temp_root("two-level-sort");
+        let first = root.join("area-2/Z");
+        let last = root.join("area-10/A");
+        let items = vec![
+            PathBuf::from("nested-10/project-1"),
+            PathBuf::from("nested-2/project-10"),
+            PathBuf::from("nested-2/project-2"),
+        ];
+        for item in &items {
+            fs::create_dir_all(first.join(item).join(".git")).unwrap();
+        }
+        fs::create_dir_all(last.join("project/.git")).unwrap();
+        let config = ProjectConfig {
+            version: 4,
+            scan_root: Some(root.clone()),
+            scan_all_drives: false,
+            excluded: Vec::new(),
+            sections: vec![
+                ProjectSection {
+                    root: last.clone(),
+                    items: vec![PathBuf::from("project")],
+                },
+                ProjectSection {
+                    root: first.clone(),
+                    items,
+                },
+            ],
+            projects: Vec::new(),
+        };
+        let rendered = parse_project_config(&render_project_config(&config)).unwrap();
+        assert_eq!(rendered.sections[0].root, first);
+        assert_eq!(rendered.sections[1].root, last);
+        let ordered = vec![
+            PathBuf::from("nested-2/project-2"),
+            PathBuf::from("nested-2/project-10"),
+            PathBuf::from("nested-10/project-1"),
+        ];
+        assert_eq!(rendered.sections[0].items, ordered);
+        let sectors = configured_sectors(&root, &config);
+        assert_eq!(sectors[0].label, "A");
+        assert_eq!(sectors[0].name, "Z");
+        assert_eq!(sectors[1].name, "A");
+        assert_eq!(
+            sectors[0].paths,
+            ordered
+                .iter()
+                .map(|item| first.join(item))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            configured_project_paths(&config),
+            sectors
+                .iter()
+                .flat_map(|sector| sector.paths.clone())
+                .collect::<Vec<_>>()
+        );
+        let generated = merge_project_config(
+            None,
+            root.clone(),
+            vec![last.join("project"), first.join("project")],
+        );
+        assert_eq!(
+            generated
+                .sections
+                .iter()
+                .map(|s| &s.root)
+                .collect::<Vec<_>>(),
+            vec![&first, &last]
+        );
+        let refreshed = refresh_project_config(generated, vec![root.join("area-1/new/project")]);
+        assert_eq!(refreshed.sections[0].root, root.join("area-1/new"));
+        assert_eq!(
+            refresh_project_config(refreshed.clone(), Vec::new()),
+            refreshed
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn active_project_paths_ignores_disabled_and_missing_projects() {
         let root = temp_root("active-config");
         let active = root.join("active-project");
@@ -1644,13 +1729,13 @@ active = true
 
         let refreshed = refresh_project_config(config, discovered.clone());
         assert_eq!(refreshed.sections.len(), 3);
-        assert_eq!(refreshed.sections[0].root, work.clone());
+        assert_eq!(refreshed.sections[0].root, other);
+        assert_eq!(refreshed.sections[0].items, vec![PathBuf::from("project")]);
+        assert_eq!(refreshed.sections[1].root, work.clone());
         assert_eq!(
-            refreshed.sections[0].items,
+            refreshed.sections[1].items,
             vec![PathBuf::from("new"), PathBuf::from("old")]
         );
-        assert_eq!(refreshed.sections[1].root, other);
-        assert_eq!(refreshed.sections[1].items, vec![PathBuf::from("project")]);
         assert_eq!(refreshed.sections[2].root, work.join("nested"));
         assert_eq!(refreshed.sections[2].items, vec![PathBuf::from("project")]);
         assert!(!configured_project_paths(&refreshed).contains(&hidden));

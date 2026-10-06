@@ -10,15 +10,14 @@ folders, links, and inaccessible subdirectories. Linux/macOS keep the home
 folder default. An explicit `--root` selects a single directory on any platform.
 
 The config records either a single scan root or `scan_all_drives = true`.
-Config format version 4 adds ordered `[[sections]]`, each with a `root` and a
+Config format version 4 adds explicit `[[sections]]`, each with a `root` and a
 required `items` array. Items are relative descendants at any depth. Versions
 1–3 remain readable and `hop config` migrates their active paths. For version 4,
 `hop config` rescans the saved scope and groups projects by their immediate parent directory. A project under
 `work/Aveni` belongs to a section rooted at `work/Aveni`, even if a broader
 `dev` section exists. Refresh also moves already configured nested items to
-their immediate parent sections. Existing roots retain their relative order;
-new roots are appended in path order, and sections emptied by regrouping are
-removed. Explicitly empty sections remain available. Configured paths, including
+their immediate parent sections. All sections are sorted alphanumerically by their full root paths;
+sections emptied by regrouping are removed. Explicitly empty sections remain available. Configured paths, including
 unavailable projects, are retained and deduplicated. Paths in the top-level `excluded` array stay hidden on refresh;
 removing an item without excluding it only hides it until the next refresh.
 If drive enumeration or scanning a selected root fails, the config is not written.
@@ -29,8 +28,11 @@ disappear. A refresh keeps unavailable configured items for later recovery.
 
 ## Default view
 
-The default view uses explicit sections. Sectors retain config order, while
-their items are sorted alphanumerically by full path. Sectors are labeled `A`
+The default view uses explicit sections. Sectors are sorted alphanumerically by their
+full root paths, and items within each sector by their relative paths, including
+all descendant components. Both config output and navigation apply these sorts
+even if the input config is manually reordered. Numeric runs use natural order
+(for example, `project-2` precedes `project-10`). Sectors are labeled `A`
 through `Z`, then `AA`, `AB`, and so on. A selector combines the
 sector label and one-based position, for example `B2`.
 
