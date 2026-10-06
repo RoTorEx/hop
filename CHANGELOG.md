@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-10-06
+
 ### Fixed
 
 - `hop config` groups projects by their immediate parent directory instead of
