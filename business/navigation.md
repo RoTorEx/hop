@@ -13,9 +13,13 @@ The config records either a single scan root or `scan_all_drives = true`.
 Config format version 4 adds ordered `[[sections]]`, each with a `root` and a
 required `items` array. Items are relative descendants at any depth. Versions
 1–3 remain readable and `hop config` migrates their active paths. For version 4,
-`hop config` rescans the saved scope and adds new projects to the deepest matching
-section, or creates a section if none matches. Existing section order and items
-remain intact. Paths in the top-level `excluded` array stay hidden on refresh;
+`hop config` rescans the saved scope and groups projects by their immediate parent directory. A project under
+`work/Aveni` belongs to a section rooted at `work/Aveni`, even if a broader
+`dev` section exists. Refresh also moves already configured nested items to
+their immediate parent sections. Existing roots retain their relative order;
+new roots are appended in path order, and sections emptied by regrouping are
+removed. Explicitly empty sections remain available. Configured paths, including
+unavailable projects, are retained and deduplicated. Paths in the top-level `excluded` array stay hidden on refresh;
 removing an item without excluding it only hides it until the next refresh.
 If drive enumeration or scanning a selected root fails, the config is not written.
 

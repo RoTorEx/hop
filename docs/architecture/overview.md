@@ -44,8 +44,10 @@ on developer machines, VMs, and VPS hosts.
 `hop config` creates or refreshes the config by scanning `$HOME` on Unix, ready
 local fixed disks on Windows, or the saved scan root. An explicit `--root <dir>`
 changes the scan scope. Legacy active paths migrate to version 4 sections
-grouped by immediate parent. Refresh adds discovered projects to the deepest
-matching section, preserving section order and configured paths. Top-level
+grouped by immediate parent. Refresh groups discovered and previously configured
+paths by immediate parent as well, moving nested entries out of broader sections.
+Existing roots retain their relative order; new roots are appended in path order.
+Sections emptied by regrouping are removed, while explicitly empty sections remain. Top-level
 `excluded` paths are skipped. The command retains configured paths that are
 temporarily unavailable, while item order is derived from full paths.
 

@@ -432,7 +432,7 @@ fn run_config(options: Options) -> ExitCode {
         paint(
             options.color,
             DIM,
-            "Edit section items to change grouping; add paths to `excluded` to keep them hidden.",
+            "Sections are grouped by project parent; add paths to `excluded` to keep them hidden.",
         ),
     );
     ExitCode::SUCCESS

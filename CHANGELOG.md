@@ -4,6 +4,13 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Fixed
+
+- `hop config` groups projects by their immediate parent directory instead of
+  inserting them into a broader ancestor section. Existing nested entries are
+  regrouped automatically; configured paths, exclusions, unavailable projects,
+  and the relative order of existing roots are preserved.
+
 ## [0.3.9] - 2026-09-26
 
 ### Fixed

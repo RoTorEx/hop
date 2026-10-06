@@ -311,55 +311,39 @@ pub fn merge_project_config(
     }
 }
 
-/// Refresh an explicit config without changing its section order or existing entries.
-/// Discovered projects omitted from `excluded` join the deepest matching section;
-/// projects outside all sections form new sections at the end.
+/// Refresh sections by immediate project parent, retaining configured paths and
+/// the relative order of existing roots. Newly needed roots are appended.
 #[must_use]
 pub fn refresh_project_config(
     mut config: ProjectConfig,
     discovered: Vec<PathBuf>,
 ) -> ProjectConfig {
-    let configured = configured_project_paths(&config)
+    let mut paths = configured_project_paths(&config)
         .into_iter()
         .collect::<BTreeSet<_>>();
-    let excluded = config.excluded.iter().collect::<BTreeSet<_>>();
-    let mut new_sections = Vec::new();
-
     for path in discovered {
-        if configured.contains(&path) || excluded.contains(&path) {
-            continue;
-        }
-        let matching_section = config
-            .sections
-            .iter()
-            .enumerate()
-            .filter_map(|(index, section)| {
-                path.strip_prefix(&section.root)
-                    .ok()
-                    .filter(|relative| !relative.as_os_str().is_empty())
-                    .map(|relative| {
-                        (
-                            index,
-                            section.root.components().count(),
-                            relative.to_path_buf(),
-                        )
-                    })
-            })
-            .max_by_key(|(_, depth, _)| *depth);
-        if let Some((index, _, relative)) = matching_section {
-            config.sections[index].items.push(relative);
-        } else {
-            new_sections.push(path);
+        if !config.excluded.contains(&path) {
+            paths.insert(path);
         }
     }
-
-    config.sections.extend(sections_from_paths(new_sections));
-    for section in &mut config.sections {
-        section.items.sort_by(|left, right| {
-            compare_paths_alphanumeric(&section.root.join(left), &section.root.join(right))
-        });
-        section.items.dedup();
+    let mut grouped = sections_from_paths(paths.into_iter().collect())
+        .into_iter()
+        .map(|section| (section.root.clone(), section))
+        .collect::<BTreeMap<_, _>>();
+    let mut sections = Vec::new();
+    for section in config.sections {
+        if let Some(group) = grouped.remove(&section.root) {
+            sections.push(group);
+        } else if section.items.is_empty()
+            && !sections
+                .iter()
+                .any(|existing| existing.root == section.root)
+        {
+            sections.push(section);
+        }
     }
+    sections.extend(grouped.into_values());
+    config.sections = sections;
     config
 }
 
@@ -1646,7 +1630,7 @@ active = true
             excluded: vec![hidden.clone()],
             sections: vec![ProjectSection {
                 root: work.clone(),
-                items: vec![PathBuf::from("old")],
+                items: vec![PathBuf::from("old"), PathBuf::from("nested/project")],
             }],
             projects: Vec::new(),
         };
@@ -1659,18 +1643,16 @@ active = true
         ];
 
         let refreshed = refresh_project_config(config, discovered.clone());
-        assert_eq!(refreshed.sections.len(), 2);
-        assert_eq!(refreshed.sections[0].root, work);
+        assert_eq!(refreshed.sections.len(), 3);
+        assert_eq!(refreshed.sections[0].root, work.clone());
         assert_eq!(
             refreshed.sections[0].items,
-            vec![
-                PathBuf::from("nested/project"),
-                PathBuf::from("new"),
-                PathBuf::from("old"),
-            ]
+            vec![PathBuf::from("new"), PathBuf::from("old")]
         );
         assert_eq!(refreshed.sections[1].root, other);
         assert_eq!(refreshed.sections[1].items, vec![PathBuf::from("project")]);
+        assert_eq!(refreshed.sections[2].root, work.join("nested"));
+        assert_eq!(refreshed.sections[2].items, vec![PathBuf::from("project")]);
         assert!(!configured_project_paths(&refreshed).contains(&hidden));
         assert_eq!(
             refresh_project_config(refreshed.clone(), discovered),
@@ -1679,6 +1661,72 @@ active = true
         assert!(
             diff_project_config_tree(&refreshed, &[configured, hidden, new, nested, another])
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn refresh_regroups_existing_nested_paths_and_preserves_unavailable_projects() {
+        let root = temp_root("regroup");
+        let dev = root.join("dev");
+        let aveni = dev.join("work/Aveni");
+        let cli = dev.join("personal/cli");
+        let existing = aveni.join("first");
+        let missing = aveni.join("offline");
+        let new = aveni.join("second");
+        let hidden = aveni.join("hidden");
+        let config = ProjectConfig {
+            version: 4,
+            scan_root: Some(root),
+            scan_all_drives: false,
+            excluded: vec![hidden.clone()],
+            sections: vec![
+                ProjectSection {
+                    root: dev.clone(),
+                    items: vec![
+                        PathBuf::from("work/Aveni/first"),
+                        PathBuf::from("work/Aveni/offline"),
+                    ],
+                },
+                ProjectSection {
+                    root: cli.clone(),
+                    items: vec![PathBuf::from("hop")],
+                },
+                ProjectSection {
+                    root: aveni.clone(),
+                    items: vec![PathBuf::from("first")],
+                },
+            ],
+            projects: Vec::new(),
+        };
+        let discovered = vec![existing.clone(), new.clone(), hidden];
+        let refreshed = refresh_project_config(config, discovered.clone());
+        assert_eq!(
+            refreshed
+                .sections
+                .iter()
+                .map(|s| &s.root)
+                .collect::<Vec<_>>(),
+            vec![&cli, &aveni]
+        );
+        assert_eq!(
+            refreshed.sections[1].items,
+            vec![
+                PathBuf::from("first"),
+                PathBuf::from("offline"),
+                PathBuf::from("second")
+            ]
+        );
+        assert_eq!(
+            configured_project_paths(&refreshed)
+                .into_iter()
+                .collect::<BTreeSet<_>>(),
+            [existing, missing, new, cli.join("hop")]
+                .into_iter()
+                .collect()
+        );
+        assert_eq!(
+            refresh_project_config(refreshed.clone(), discovered),
+            refreshed
         );
     }
 

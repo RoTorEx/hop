@@ -18,7 +18,7 @@ change to its shell integration.
 ## Core flows and invariants
 
 - `hop config` generates, migrates, or refreshes the project list. Refreshing
-  adds discovered Git projects while preserving existing sections and entries;
+  adds discovered Git projects grouped by their immediate parent directories while preserving configured paths;
   explicit `excluded` paths remain hidden. On Windows, its default scope is
   every ready local fixed disk so users do not need to specify drive letters.
   Linux/macOS default to the user home; `--root` explicitly limits either platform.
