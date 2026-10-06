@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.11] - 2026-10-06
+
 ### Fixed
 
 - Sort all sections by full root path and items within each section by relative
