@@ -4,6 +4,11 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Added
+
+- Select a sector's root directory with position zero (`A0`, `B0`, `AA0`),
+  including empty sectors, in interactive, direct, and copy-path modes.
+
 ## [0.3.11] - 2026-10-06
 
 ### Fixed

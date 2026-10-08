@@ -34,7 +34,13 @@ all descendant components. Both config output and navigation apply these sorts
 even if the input config is manually reordered. Numeric runs use natural order
 (for example, `project-2` precedes `project-10`). Sectors are labeled `A`
 through `Z`, then `AA`, `AB`, and so on. A selector combines the
-sector label and one-based position, for example `B2`.
+sector label and one-based position, for example `B2`. Position `0` selects
+the sector's exact root directory: `hop A0` or interactive `A0` jumps there,
+and `hop --copy-path A0` copies it. Labels are case-insensitive and may contain
+multiple letters, such as `AA0`. Project positions still start at `1`.
+Root selection also works for explicitly empty sectors or sectors whose
+configured projects are unavailable. The root need not contain `.git`;
+the shell bridge validates the directory before changing into it.
 
 `hop list` renders this same view and exits successfully without prompting for
 a selection. It does not select a project or record a jump.

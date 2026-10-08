@@ -38,6 +38,7 @@ const SKIP_DIRS: &[&str] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sector {
     pub label: String,
+    pub root: PathBuf,
     pub name: String,
     pub above: String,
     pub paths: Vec<PathBuf>,
@@ -109,7 +110,8 @@ impl ProjectTreeDiff {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Choice {
     pub sector_index: usize,
-    pub project_index: usize,
+    /// None selects the sector root; Some selects a zero-based project index.
+    pub project_index: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,7 +121,6 @@ pub enum ChoiceParseError {
     MissingNumber,
     InvalidNumber,
     InvalidSector,
-    ZeroPosition,
 }
 
 impl ChoiceParseError {
@@ -129,9 +130,8 @@ impl ChoiceParseError {
             Self::Empty => "empty input cancels",
             Self::MissingSector => "expected a sector label, for example A1",
             Self::MissingNumber => "expected a number after the sector label",
-            Self::InvalidNumber => "expected a positive number after the sector label",
+            Self::InvalidNumber => "expected a non-negative number after the sector label",
             Self::InvalidSector => "sector label is too large",
-            Self::ZeroPosition => "project position starts at 1",
         }
     }
 }
@@ -402,6 +402,7 @@ pub fn configured_sectors(scan_root: &Path, config: &ProjectConfig) -> Vec<Secto
         .enumerate()
         .map(|(index, section)| Sector {
             label: label_for_index(index),
+            root: section.root.clone(),
             name: section
                 .root
                 .file_name()
@@ -685,6 +686,7 @@ pub fn group_projects(scan_root: &Path, projects: Vec<PathBuf>) -> Vec<Sector> {
             paths.sort();
             Sector {
                 label: label_for_index(index),
+                root: paths[0].parent().unwrap_or(scan_root).to_path_buf(),
                 name,
                 above,
                 paths,
@@ -756,15 +758,11 @@ pub fn parse_choice(input: &str) -> Result<Choice, ChoiceParseError> {
     let project_number = number
         .parse::<usize>()
         .map_err(|_| ChoiceParseError::InvalidNumber)?;
-    if project_number == 0 {
-        return Err(ChoiceParseError::ZeroPosition);
-    }
-
     let sector_index = index_for_label(label).ok_or(ChoiceParseError::InvalidSector)?;
 
     Ok(Choice {
         sector_index,
-        project_index: project_number - 1,
+        project_index: project_number.checked_sub(1),
     })
 }
 
@@ -1325,20 +1323,27 @@ mod tests {
             parse_choice("a1"),
             Ok(Choice {
                 sector_index: 0,
-                project_index: 0
+                project_index: Some(0)
             })
         );
         assert_eq!(
             parse_choice("AA 12"),
             Ok(Choice {
                 sector_index: 26,
-                project_index: 11
+                project_index: Some(11)
             })
         );
         assert_eq!(parse_choice(""), Err(ChoiceParseError::Empty));
         assert_eq!(parse_choice("A"), Err(ChoiceParseError::MissingNumber));
         assert_eq!(parse_choice("1"), Err(ChoiceParseError::MissingSector));
-        assert_eq!(parse_choice("A0"), Err(ChoiceParseError::ZeroPosition));
+        assert_eq!(
+            parse_choice("aa 0"),
+            Ok(Choice {
+                sector_index: 26,
+                project_index: None,
+            })
+        );
+        assert_eq!(parse_choice("A-1"), Err(ChoiceParseError::InvalidNumber));
     }
 
     #[test]

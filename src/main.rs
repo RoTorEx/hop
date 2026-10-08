@@ -227,7 +227,9 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
         config_source,
     } = navigation;
 
-    if projects.is_empty() {
+    if projects.is_empty()
+        && (options.frequent || configured_groups.as_ref().is_none_or(Vec::is_empty))
+    {
         if let Some(config_source) = config_source {
             return fail(
                 &format!(
@@ -746,7 +748,10 @@ fn path_for_choice(
     let Some(sector) = sectors.get(choice.sector_index) else {
         return Err("No such sector");
     };
-    let Some(path) = sector.paths.get(choice.project_index) else {
+    let Some(project_index) = choice.project_index else {
+        return Ok(&sector.root);
+    };
+    let Some(path) = sector.paths.get(project_index) else {
         return Err("No such project");
     };
 
@@ -1720,6 +1725,48 @@ mod tests {
         assert_eq!(options.command, Command::RecordJump);
         assert_eq!(options.target.as_deref(), Some("/work/hop"));
         assert!(!options.color);
+    }
+
+    #[test]
+    fn sector_zero_selects_exact_configured_root_even_without_projects() {
+        let root = temp_root("sector-root");
+        let sector_root = root.join("work");
+        let nested_project = sector_root.join("apps/project");
+        fs::create_dir_all(nested_project.join(".git")).unwrap();
+        let config = hop::parse_project_config(&format!(
+            "version = 4\n[[sections]]\nroot = {:?}\nitems = [\"apps/project\"]\n[[sections]]\nroot = {:?}\nitems = []\n",
+            sector_root.display().to_string(),
+            root.join("empty").display().to_string(),
+        ))
+        .unwrap();
+        let sectors = configured_sectors(&root, &config);
+        // Full-root sorting puts the empty sector first.
+        assert_eq!(
+            path_for_choice(&sectors, parse_choice("a0").unwrap()),
+            Ok(root.join("empty").as_path())
+        );
+        assert_eq!(
+            path_for_choice(&sectors, parse_choice("B0").unwrap()),
+            Ok(sector_root.as_path())
+        );
+        assert_eq!(
+            path_for_choice(&sectors, parse_choice("B1").unwrap()),
+            Ok(nested_project.as_path())
+        );
+        assert_eq!(
+            path_for_choice(&sectors, parse_choice("A1").unwrap()),
+            Err("No such project")
+        );
+        assert_eq!(
+            path_for_choice(&sectors, parse_choice("C0").unwrap()),
+            Err("No such sector")
+        );
+        let discovered = group_projects(&root, vec![nested_project.clone()]);
+        assert_eq!(
+            path_for_choice(&discovered, parse_choice("A0").unwrap()),
+            Ok(nested_project.parent().unwrap())
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
