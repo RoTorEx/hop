@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-10-08
+
 ### Added
 
 - Select a sector's root directory with position zero (`A0`, `B0`, `AA0`),
