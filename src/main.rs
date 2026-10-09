@@ -5,6 +5,9 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
 
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+
 use hop::{
     APP_NAME, ChoiceParseError, JumpHistory, ProjectConfig, RankedProject, Sector,
     active_project_paths, cli_home_path, config_path, configured_project_paths, configured_sectors,
@@ -1269,9 +1272,74 @@ fn project_parent_display(scan_root: &Path, project: &Path) -> String {
 }
 
 fn read_choice() -> io::Result<String> {
+    if io::stdin().is_terminal() {
+        return read_terminal_choice();
+    }
     let mut buf = String::new();
     io::stdin().read_line(&mut buf)?;
     Ok(buf.trim().to_owned())
+}
+
+struct RawInput;
+
+impl Drop for RawInput {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+    }
+}
+
+fn read_terminal_choice() -> io::Result<String> {
+    enable_raw_mode()?;
+    let _raw_input = RawInput;
+    let mut input = String::new();
+    let mut output = io::stderr().lock();
+    loop {
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
+        if key.kind == KeyEventKind::Release {
+            continue;
+        }
+        match key.code {
+            KeyCode::Esc => {
+                write!(output, "\r\n")?;
+                output.flush()?;
+                return Ok(String::new());
+            }
+            KeyCode::Enter => {
+                write!(output, "\r\n")?;
+                output.flush()?;
+                return Ok(input.trim().to_owned());
+            }
+            KeyCode::Char('c' | 'd') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                write!(output, "\r\n")?;
+                output.flush()?;
+                return Ok(String::new());
+            }
+            KeyCode::Backspace if !input.is_empty() => {
+                input.pop();
+                write!(output, "\x08 \x08")?;
+            }
+            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                for _ in input.chars() {
+                    write!(output, "\x08 \x08")?;
+                }
+                input.clear();
+            }
+            KeyCode::Char(ch)
+                if ch.is_ascii()
+                    && !ch.is_control()
+                    && !key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                input.push(ch);
+                write!(output, "{ch}")?;
+            }
+            _ => {}
+        }
+        output.flush()?;
+    }
 }
 
 fn fail(message: &str, color: bool) -> ExitCode {

@@ -45,6 +45,13 @@ the shell bridge validates the directory before changing into it.
 `hop list` renders this same view and exits successfully without prompting for
 a selection. It does not select a project or record a jump.
 
+In both interactive views, Esc immediately cancels the selection, including
+after partially entering a selector. Cancellation emits no selected path and
+leaves the shell directory and jump history unchanged. Enter submits a selector;
+empty Enter, Ctrl+C, and Ctrl+D also cancel. Backspace edits the selector and
+Ctrl+U clears it. Terminal input settings are restored when the prompt ends.
+Piped input keeps the existing line-based interface.
+
 ## Frequent view
 
 `--frequent` presents one flat list because retaining directory sectors would

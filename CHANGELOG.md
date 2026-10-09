@@ -4,6 +4,11 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Fixed
+
+- Esc immediately cancels interactive selection in default, frequent, and
+  copy-path modes without waiting for Enter or changing the shell directory.
+
 ## [0.3.12] - 2026-10-08
 
 ### Added
