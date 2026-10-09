@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.13] - 2026-10-09
+
 ### Fixed
 
 - Esc immediately cancels interactive selection in default, frequent, and
