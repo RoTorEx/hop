@@ -399,9 +399,8 @@ pub fn configured_project_paths(config: &ProjectConfig) -> Vec<PathBuf> {
 pub fn configured_sectors(scan_root: &Path, config: &ProjectConfig) -> Vec<Sector> {
     sorted_sections(config)
         .into_iter()
-        .enumerate()
-        .map(|(index, section)| Sector {
-            label: label_for_index(index),
+        .map(|section| Sector {
+            label: String::new(),
             root: section.root.clone(),
             name: section
                 .root
@@ -424,6 +423,12 @@ pub fn configured_sectors(scan_root: &Path, config: &ProjectConfig) -> Vec<Secto
                 .filter(|item| section.root.join(item).join(".git").exists())
                 .map(|item| item.display().to_string())
                 .collect(),
+        })
+        .filter(|sector| !sector.paths.is_empty())
+        .enumerate()
+        .map(|(index, mut sector)| {
+            sector.label = label_for_index(index);
+            sector
         })
         .collect()
 }
@@ -1560,6 +1565,64 @@ active = true
         let project_10 = rendered.find("project-10").expect("project-10 rendered");
 
         assert!(project_2 < project_10);
+    }
+
+    #[test]
+    fn navigation_hides_unavailable_sections_and_restores_recovered_projects() {
+        let root = temp_root("hidden-sections");
+        let empty = root.join("area-1");
+        let stale = root.join("area-2");
+        let missing = root.join("area-3");
+        let available = root.join("area-4");
+        fs::create_dir_all(&empty).unwrap();
+        fs::create_dir_all(stale.join("project")).unwrap();
+        fs::create_dir_all(available.join("project/.git")).unwrap();
+        let config = ProjectConfig {
+            version: 4,
+            scan_root: Some(root.clone()),
+            scan_all_drives: false,
+            excluded: Vec::new(),
+            sections: vec![
+                ProjectSection {
+                    root: empty,
+                    items: Vec::new(),
+                },
+                ProjectSection {
+                    root: stale.clone(),
+                    items: vec![PathBuf::from("project")],
+                },
+                ProjectSection {
+                    root: missing,
+                    items: vec![PathBuf::from("project")],
+                },
+                ProjectSection {
+                    root: available.clone(),
+                    items: vec![PathBuf::from("gone"), PathBuf::from("project")],
+                },
+            ],
+            projects: Vec::new(),
+        };
+        let refreshed = refresh_project_config(config, vec![available.join("project")]);
+        let sectors = configured_sectors(&root, &refreshed);
+        assert_eq!(sectors.len(), 1);
+        assert_eq!(sectors[0].label, "A");
+        assert_eq!(sectors[0].root, available);
+        assert_eq!(sectors[0].paths, vec![available.join("project")]);
+        assert_eq!(sectors[0].item_names, vec!["project"]);
+        assert!(configured_project_paths(&refreshed).contains(&stale.join("project")));
+
+        fs::create_dir_all(stale.join("project/.git")).unwrap();
+        let sectors = configured_sectors(&root, &refreshed);
+        assert_eq!(sectors.len(), 2);
+        assert_eq!(sectors[0].label, "A");
+        assert_eq!(sectors[0].root, stale);
+        assert_eq!(sectors[1].label, "B");
+        assert_eq!(sectors[1].root, available);
+
+        fs::remove_dir_all(stale.join("project/.git")).unwrap();
+        fs::remove_dir_all(available.join("project/.git")).unwrap();
+        assert!(configured_sectors(&root, &refreshed).is_empty());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

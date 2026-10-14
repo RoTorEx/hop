@@ -17,7 +17,7 @@ required `items` array. Items are relative descendants at any depth. Versions
 `work/Aveni` belongs to a section rooted at `work/Aveni`, even if a broader
 `dev` section exists. Refresh also moves already configured nested items to
 their immediate parent sections. All sections are sorted alphanumerically by their full root paths;
-sections emptied by regrouping are removed. Explicitly empty sections remain available. Configured paths, including
+sections emptied by regrouping are removed. Explicitly empty sections remain in the config. Configured paths, including
 unavailable projects, are retained and deduplicated. Paths in the top-level `excluded` array stay hidden on refresh;
 removing an item without excluding it only hides it until the next refresh.
 If drive enumeration or scanning a selected root fails, the config is not written.
@@ -28,7 +28,11 @@ disappear. A refresh keeps unavailable configured items for later recovery.
 
 ## Default view
 
-The default view uses explicit sections. Sectors are sorted alphanumerically by their
+The default view shows only sections with at least one available Git project.
+Empty sections and sections whose configured items all lack `.git` are hidden;
+their saved entries are retained and become visible when projects are available again.
+Labels are assigned consecutively after filtering, so hidden sections occupy no selectors.
+Sectors are sorted alphanumerically by their
 full root paths, and items within each sector by their relative paths, including
 all descendant components. Both config output and navigation apply these sorts
 even if the input config is manually reordered. Numeric runs use natural order
@@ -38,8 +42,7 @@ sector label and one-based position, for example `B2`. Position `0` selects
 the sector's exact root directory: `hop A0` or interactive `A0` jumps there,
 and `hop --copy-path A0` copies it. Labels are case-insensitive and may contain
 multiple letters, such as `AA0`. Project positions still start at `1`.
-Root selection also works for explicitly empty sectors or sectors whose
-configured projects are unavailable. The root need not contain `.git`;
+Root selection is available only for visible sectors. The root need not contain `.git`;
 the shell bridge validates the directory before changing into it.
 
 `hop list` renders this same view and exits successfully without prompting for

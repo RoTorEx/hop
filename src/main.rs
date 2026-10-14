@@ -1796,7 +1796,7 @@ mod tests {
     }
 
     #[test]
-    fn sector_zero_selects_exact_configured_root_even_without_projects() {
+    fn sector_zero_selects_visible_root_after_empty_sections_are_hidden() {
         let root = temp_root("sector-root");
         let sector_root = root.join("work");
         let nested_project = sector_root.join("apps/project");
@@ -1808,25 +1808,21 @@ mod tests {
         ))
         .unwrap();
         let sectors = configured_sectors(&root, &config);
-        // Full-root sorting puts the empty sector first.
+        // Empty sections do not occupy a selector label.
         assert_eq!(
             path_for_choice(&sectors, parse_choice("a0").unwrap()),
-            Ok(root.join("empty").as_path())
-        );
-        assert_eq!(
-            path_for_choice(&sectors, parse_choice("B0").unwrap()),
             Ok(sector_root.as_path())
         );
         assert_eq!(
-            path_for_choice(&sectors, parse_choice("B1").unwrap()),
+            path_for_choice(&sectors, parse_choice("A1").unwrap()),
             Ok(nested_project.as_path())
         );
         assert_eq!(
-            path_for_choice(&sectors, parse_choice("A1").unwrap()),
+            path_for_choice(&sectors, parse_choice("A2").unwrap()),
             Err("No such project")
         );
         assert_eq!(
-            path_for_choice(&sectors, parse_choice("C0").unwrap()),
+            path_for_choice(&sectors, parse_choice("B0").unwrap()),
             Err("No such sector")
         );
         let discovered = group_projects(&root, vec![nested_project.clone()]);

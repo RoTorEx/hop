@@ -50,6 +50,10 @@ All roots are sorted alphanumerically by full path.
 Sections emptied by regrouping are removed, while explicitly empty sections remain. Top-level
 `excluded` paths are skipped. The command retains configured paths that are
 temporarily unavailable, while item order is derived from relative paths.
+Navigation filters out sections without available `.git` items before assigning
+consecutive labels. Hidden sections retain their config entries and reappear
+when a configured Git project becomes available; root selectors apply only to
+visible sections.
 
 The binary never changes directory itself because child processes cannot change
 the parent shell's working directory; the installed `hop` shell wrapper

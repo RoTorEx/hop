@@ -4,6 +4,12 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+### Fixed
+
+- Hide sections without available Git projects in navigation and `hop list`,
+  assigning consecutive selector labels to visible sections while retaining
+  unavailable projects in the config.
+
 ## [0.3.13] - 2026-10-09
 
 ### Fixed
