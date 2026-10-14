@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.14] - 2026-10-14
+
 ### Fixed
 
 - Hide sections without available Git projects in navigation and `hop list`,
