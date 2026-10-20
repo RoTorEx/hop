@@ -174,10 +174,10 @@ configs. Version 4 makes selection and grouping explicit:
 ```toml
 version = 4
 scan_root = "/Users/alex"
-excluded = ["/Users/alex/Documents/WorkSpace/dev/personal/cli/hidden-project"]
+excluded = ["/Users/alex/Documents/WorkSpace/Development/personal/cli/hidden-project"]
 
 [[sections]]
-root = "/Users/alex/Documents/WorkSpace/dev/personal/cli"
+root = "/Users/alex/Documents/WorkSpace/Development/personal/cli"
 items = [
   "hop",
   "shelve",
