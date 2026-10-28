@@ -43,17 +43,17 @@ curl -fsSL https://raw.githubusercontent.com/RoTorEx/hop/main/scripts/install.sh
 ```
 
 The installer builds with Cargo, copies the binary to
-`~/.x-cli-hop/bin/hop`, writes the shell bridge to
-`~/.x-cli-hop/init.zsh`, stores a supplied private repo update token at
-`~/.x-cli-hop/gh-token` with file mode `0600`, and adds one plain line to the
+`~/.toolbelt/hop/bin/hop`, writes the shell bridge to
+`~/.toolbelt/hop/init.zsh`, stores a supplied private repo update token at
+`~/.toolbelt/hop/gh-token` with file mode `0600`, and adds one plain line to the
 active bash/zsh profile:
 
 ```bash
-source "$HOME/.x-cli-hop/init.zsh"
+source "$HOME/.toolbelt/hop/init.zsh"
 ```
 
 The bridge is required because a child process cannot change its parent shell's
-working directory. It adds `~/.x-cli-hop/bin` to PATH without duplicates,
+working directory. It adds `~/.toolbelt/hop/bin` to PATH without duplicates,
 delegates all argument parsing to the Rust CLI, uses the absolute installed
 binary path, validates the selected directory, and contains the only `cd`
 needed by the integration. `hop update` refreshes both the binary and this
@@ -76,7 +76,7 @@ from [GitHub Releases](https://github.com/RoTorEx/hop/releases/latest), or run
 these commands in PowerShell once a Windows release is published:
 
 ```powershell
-$hopBin = Join-Path $env:USERPROFILE '.x-cli-hop\bin'
+$hopBin = Join-Path $env:USERPROFILE '.toolbelt/hop\bin'
 New-Item -ItemType Directory -Path $hopBin -Force | Out-Null
 $hopArchive = Join-Path $env:TEMP 'hop-windows-x86_64.zip'
 Invoke-WebRequest 'https://github.com/RoTorEx/hop/releases/latest/download/hop-windows-x86_64.zip' -OutFile $hopArchive
@@ -93,7 +93,7 @@ To enable directory changes in every PowerShell session, add these lines to
 
 ```powershell
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-& "$env:USERPROFILE\.x-cli-hop\bin\hop.exe" --shell-init | Out-String | Invoke-Expression
+& "$env:USERPROFILE\.toolbelt/hop\bin\hop.exe" --shell-init | Out-String | Invoke-Expression
 ```
 
 On Windows, plain `hop config` automatically scans every ready local fixed disk
@@ -111,7 +111,7 @@ explicit sections. Running `hop config` again scans for newly created projects;
 add paths to `excluded` to keep deliberate omissions hidden.
 
 Windows PowerShell 5.1 and PowerShell 7 are supported. Configuration and history
-live under `%USERPROFILE%\.x-cli-hop`; copy mode uses `Set-Clipboard`.
+live under `%USERPROFILE%\.toolbelt/hop`; copy mode uses `Set-Clipboard`.
 The raw executable also works from CMD, but directory changes require the
 PowerShell bridge. To update on Windows, repeat the download/extract commands
 when `hop.exe` has exited; `hop update` remains Linux/macOS-only.
@@ -155,7 +155,7 @@ stdout and copies the selected path with `pbcopy`, `wl-copy`, `xclip`, or `xsel`
 interactive prompt. Add `--frequent` to print the same ranked view as
 `hop --frequent`. List mode does not select a project or change directories.
 
-`hop ~` jumps directly to the hop home directory, `~/.x-cli-hop`.
+`hop ~` jumps directly to the hop home directory, `~/.toolbelt/hop`.
 
 `hop --frequent` shows all available configured projects in one list, ordered by the number
 of successful jumps. This view uses numeric selectors, so `hop --frequent 1`
@@ -163,12 +163,12 @@ jumps to the current most-used project. Equal counts fall back to alphanumeric
 path order. Copying a path and failed directory changes do not increase the
 count.
 
-Jump counts are kept locally in `~/.x-cli-hop/history.toml`, separately from
+Jump counts are kept locally in `~/.toolbelt/hop/history.toml`, separately from
 the manually editable project config. The installed shell bridge records a jump
 only after it changes directory successfully.
 
 `hop config` scans `$HOME` on Linux/macOS or all ready local fixed disks on
-Windows and creates `~/.x-cli-hop/config.toml`. It also migrates version 1–3
+Windows and creates `~/.toolbelt/hop/config.toml`. It also migrates version 1–3
 configs. Version 4 makes selection and grouping explicit:
 
 ```toml
@@ -206,9 +206,9 @@ checks known-project availability without rescanning every disk.
 Normal `hop` jump mode requires the config file. If it is missing, hop
 prints an alert and exits; run `hop config` first.
 
-`hop update` replaces `~/.x-cli-hop/bin/hop` and refreshes `init.zsh`
+`hop update` replaces `~/.toolbelt/hop/bin/hop` and refreshes `init.zsh`
 from the latest Linux or macOS release for the current CPU architecture. It
-requires `curl` or `wget`, plus `tar`. If `~/.x-cli-hop/gh-token` exists,
+requires `curl` or `wget`, plus `tar`. If `~/.toolbelt/hop/gh-token` exists,
 updates use that token for GitHub authentication.
 
 ## Release Flow

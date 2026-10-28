@@ -11,7 +11,7 @@ change to its shell integration.
 - A project is a discovered directory containing `.git`.
 - A configured project is listed in a section's `items` array; an `excluded`
   project stays hidden when the config is refreshed.
-- A sector is a section rooted at a project parent directory.
+- A sector is a section rooted at a project parent directory. Its implicit `0` selector opens that root even when it has no Git repository.
 - A successful jump is a directory change completed by the installed shell
   integration, not merely a selection or copied path.
 
@@ -26,7 +26,7 @@ change to its shell integration.
   and checks known project availability without repeating a full disk scan.
 - The default view sorts sections by full root path and their items by relative path, and addresses them with
   selectors such as `A1`.
-- The frequent view globally ranks the same configured projects by successful jump
+- The frequent view globally ranks configured projects and section roots by successful jump
   count and addresses them with numeric positions such as `1`.
 - UI and diagnostics go to stderr. A selected path is the only stdout emitted
   in jump mode, so shell integration remains safe.
@@ -49,3 +49,10 @@ change to its shell integration.
 - `src/lib.rs` — discovery, configuration, history, grouping, and ranking.
 - `src/main.rs` — CLI routing, terminal rendering, and shell integration.
 - `docs/architecture/overview.md` — technical flow and system boundaries.
+
+## Toolbelt installation
+
+The default installation, configuration and jump history live together under
+`~/.toolbelt/hop`. Discovery includes nested Git repositories and skips symbolic
+links and dependency/build directories. Each discovered path is listed once.
+The normal list keeps root selector `0` implicit; it adds no Root row.

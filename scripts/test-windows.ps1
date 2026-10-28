@@ -19,13 +19,13 @@ try {
     $env:USERPROFILE = $testRoot
     & $installed config --root (Join-Path $testRoot 'work') --no-color
     if ($LASTEXITCODE -ne 0) { throw 'Config failed' }
-    $configText = Get-Content -LiteralPath (Join-Path $testRoot '.x-cli-hop\config.toml') -Raw
+    $configText = Get-Content -LiteralPath (Join-Path $testRoot '.toolbelt/hop\config.toml') -Raw
     if ($configText -match 'junction') { throw 'Discovery followed a junction' }
     & $installed --shell-init | Out-String | Invoke-Expression
     hop A1 --no-color
     if ((Get-Location).Path -ne $project) { throw 'Shell did not change directory' }
     hop A1 --no-color
-    $history = Get-Content -LiteralPath (Join-Path $testRoot '.x-cli-hop\history.toml') -Raw
+    $history = Get-Content -LiteralPath (Join-Path $testRoot '.toolbelt/hop\history.toml') -Raw
     if ($history -notmatch 'jumps = 2') { throw 'Repeated jumps did not update history' }
     $output = hop list --frequent --no-color
     if ($null -ne $output) { throw 'List polluted stdout' }
@@ -38,8 +38,8 @@ try {
     # PowerShell expands ~ to its own real home before native invocation.
     # Pass the expanded isolated home so this test never touches runner state.
     hop $testRoot --no-color
-    if ((Get-Location).Path -ne (Join-Path $testRoot '.x-cli-hop')) { throw 'Home shortcut failed' }
-    if ((Get-Content -LiteralPath (Join-Path $testRoot '.x-cli-hop\history.toml') -Raw) -ne $history) {
+    if ((Get-Location).Path -ne (Join-Path $testRoot '.toolbelt/hop')) { throw 'Home shortcut failed' }
+    if ((Get-Content -LiteralPath (Join-Path $testRoot '.toolbelt/hop\history.toml') -Raw) -ne $history) {
         throw 'Non-project actions changed history'
     }
     $global:LASTEXITCODE = 0

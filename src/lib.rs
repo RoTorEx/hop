@@ -5,7 +5,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 pub const APP_NAME: &str = "hop";
-pub const CONFIG_DIR_NAME: &str = ".x-cli-hop";
+pub const CONFIG_DIR_NAME: &str = ".toolbelt/hop";
 pub const CONFIG_FILE_NAME: &str = "config.toml";
 pub const HISTORY_FILE_NAME: &str = "history.toml";
 
@@ -1183,9 +1183,8 @@ fn push_toml_string(output: &mut String, value: &str) {
 }
 
 fn scan_dir(root: &Path, out: &mut Vec<PathBuf>, is_root: bool) -> io::Result<()> {
-    if !is_root && root.join(".git").exists() {
+    if root.join(".git").exists() {
         out.push(root.to_path_buf());
-        return Ok(());
     }
 
     let entries = match fs::read_dir(root) {
@@ -1271,7 +1270,7 @@ mod tests {
     fn scans_git_projects_and_skips_noise() {
         let root = temp_root("scan");
         let project = root.join("work/apps/hop");
-        let nested = project.join("nested/ignored");
+        let nested = project.join("nested/component");
         let skipped = root.join("node_modules/package");
         let construction_side = root.join("construction_side/tool-cache/checkouts/package");
         let hidden = root.join(".config/project");
@@ -1285,7 +1284,13 @@ mod tests {
 
         let projects = discover_projects(&root).expect("scan projects");
 
-        assert_eq!(projects, vec![project]);
+        assert_eq!(projects, vec![project.clone(), nested]);
+        assert_eq!(
+            discover_projects(&project)
+                .expect("scan project root")
+                .len(),
+            2
+        );
 
         let _ = fs::remove_dir_all(root);
     }

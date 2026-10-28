@@ -251,7 +251,13 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
             Ok(history) => history,
             Err(message) => return fail(&message, options.color),
         };
-        let ranked = rank_projects_by_jumps(projects, &history);
+        let mut destinations = projects;
+        if let Some(sectors) = &configured_groups {
+            destinations.extend(sectors.iter().map(|sector| sector.root.clone()));
+        }
+        destinations.sort();
+        destinations.dedup();
+        let ranked = rank_projects_by_jumps(destinations, &history);
 
         if let Some(target) = options.target {
             return choose_frequent_target(&ranked, &target, options.copy_path, options.color);
@@ -284,7 +290,7 @@ fn run_record_jump(options: Options) -> ExitCode {
         return fail("--record-jump requires a project path", options.color);
     };
     let project = PathBuf::from(target);
-    if !project.join(".git").exists() {
+    if !project.is_dir() {
         return ExitCode::SUCCESS;
     }
     let home = match home_dir() {
@@ -1547,7 +1553,7 @@ fn shell_activation_command() -> String {
         .ok()
         .and_then(|binary| installation_home(&binary).map(|home| home.join("init.zsh")))
         .map_or_else(
-            || ". \"$HOME/.x-cli-hop/init.zsh\"".to_owned(),
+            || ". \"$HOME/.toolbelt/hop/init.zsh\"".to_owned(),
             |init| format!(". {}", shell_quote(&init.display().to_string())),
         )
 }
@@ -1619,11 +1625,11 @@ mod tests {
 
         assert_eq!(
             cli_home_shortcut_path_for_home("~", &home),
-            Some(PathBuf::from("/home/alex/.x-cli-hop"))
+            Some(PathBuf::from("/home/alex/.toolbelt/hop"))
         );
         assert_eq!(
             cli_home_shortcut_path_for_home("/home/alex", &home),
-            Some(PathBuf::from("/home/alex/.x-cli-hop"))
+            Some(PathBuf::from("/home/alex/.toolbelt/hop"))
         );
         assert_eq!(cli_home_shortcut_path_for_home("A1", &home), None);
     }
@@ -1660,12 +1666,12 @@ mod tests {
     #[test]
     fn installation_home_supports_legacy_and_bin_layouts() {
         assert_eq!(
-            installation_home(Path::new("/home/alex/.x-cli-hop/hop")),
-            Some(Path::new("/home/alex/.x-cli-hop")),
+            installation_home(Path::new("/home/alex/.toolbelt/hop/hop")),
+            Some(Path::new("/home/alex/.toolbelt/hop")),
         );
         assert_eq!(
-            installation_home(Path::new("/home/alex/.x-cli-hop/bin/hop")),
-            Some(Path::new("/home/alex/.x-cli-hop")),
+            installation_home(Path::new("/home/alex/.toolbelt/hop/bin/hop")),
+            Some(Path::new("/home/alex/.toolbelt/hop")),
         );
     }
 

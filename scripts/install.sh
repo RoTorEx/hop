@@ -3,7 +3,7 @@ set -eu
 
 repo="RoTorEx/hop"
 ref="main"
-install_dir="${HOME:-}/.x-cli-hop"
+install_dir="${HOME:-}/.toolbelt/hop"
 bin_dir="$install_dir/bin"
 update_profile=1
 source_dir=""
@@ -19,7 +19,7 @@ Usage:
 Environment:
   HOP_REPO          GitHub repo, default RoTorEx/hop
   HOP_REF           branch, tag, or commit, default main
-  HOP_INSTALL_DIR   install directory, default ~/.x-cli-hop
+  HOP_INSTALL_DIR   install directory, default ~/.toolbelt/hop
   GH_INSTALLER_TOKEN   GitHub token for private repo installs
 
 The installer builds with Cargo, installs the binary under bin/, writes the
@@ -195,8 +195,8 @@ fi
 
 legacy_path_export() {
     escaped_install_dir="$(printf '%s' "$install_dir" | sed 's/[\\"$`]/\\&/g')"
-    if [ "$install_dir" = "$HOME/.x-cli-hop" ]; then
-        printf 'export PATH="$HOME/.x-cli-hop:$PATH"\n'
+    if [ "$install_dir" = "$HOME/.toolbelt/hop" ]; then
+        printf 'export PATH="$HOME/.toolbelt/hop:$PATH"\n'
     else
         printf 'export PATH="%s:$PATH"\n' "$escaped_install_dir"
     fi
@@ -204,8 +204,8 @@ legacy_path_export() {
 
 legacy_bin_path_export() {
     escaped_bin_dir="$(printf '%s' "$bin_dir" | sed 's/[\\"$`]/\\&/g')"
-    if [ "$bin_dir" = "$HOME/.x-cli-hop/bin" ]; then
-        printf 'export PATH="$HOME/.x-cli-hop/bin:$PATH"\n'
+    if [ "$bin_dir" = "$HOME/.toolbelt/hop/bin" ]; then
+        printf 'export PATH="$HOME/.toolbelt/hop/bin:$PATH"\n'
     else
         printf 'export PATH="%s:$PATH"\n' "$escaped_bin_dir"
     fi
@@ -214,8 +214,8 @@ legacy_bin_path_export() {
 profile_source() {
     init_file="$install_dir/init.zsh"
     escaped_init_file="$(printf '%s' "$init_file" | sed 's/[\\"$`]/\\&/g')"
-    if [ "$init_file" = "$HOME/.x-cli-hop/init.zsh" ]; then
-        printf 'source "$HOME/.x-cli-hop/init.zsh"\n'
+    if [ "$init_file" = "$HOME/.toolbelt/hop/init.zsh" ]; then
+        printf 'source "$HOME/.toolbelt/hop/init.zsh"\n'
     else
         printf 'source "%s"\n' "$escaped_init_file"
     fi
