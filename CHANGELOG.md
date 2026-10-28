@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.16] - 2026-10-28
+
 - Count configured workspace-root jumps without recording the Toolbelt home shortcut as a project jump.
 
 ## [0.3.15] - 2026-10-28
