@@ -270,3 +270,8 @@ Confirm these exist after pulling:
 ## Commands
 
 See `Makefile`.
+
+## Local usage logs
+
+See [usage logging](docs/usage-logging.md) for product events, privacy, paths,
+rotation and interpretation limits.

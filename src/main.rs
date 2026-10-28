@@ -1,3 +1,5 @@
+mod usage;
+use serde_json::json;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -40,6 +42,7 @@ enum Command {
     Update,
     Config,
     RecordJump,
+    RecordJumpFailed,
 }
 
 struct NavigationProjects {
@@ -60,16 +63,48 @@ struct Options {
 }
 
 fn main() -> ExitCode {
+    if let Ok(home) = home_dir() {
+        usage::init("hop", cli_home_path(&home).join("logs/events.jsonl"));
+    }
+    let operation = usage::Operation::start("command");
+    let result = run_cli();
+    operation.finish(
+        if result == ExitCode::SUCCESS {
+            "success"
+        } else {
+            "error"
+        },
+        json!({}),
+    );
+    result
+}
+fn run_cli() -> ExitCode {
     let options = match parse_args(env::args().skip(1)) {
         Ok(options) => options,
         Err(message) => return fail(&message, colors_enabled()),
     };
 
-    if !matches!(options.command, Command::Config | Command::RecordJump) {
+    if !matches!(
+        options.command,
+        Command::Config | Command::RecordJump | Command::RecordJumpFailed
+    ) {
         warn_if_project_config_needs_refresh(&options);
     }
 
+    usage::event(
+        "command_selected",
+        "started",
+        json!({"mode":match options.command {Command::Help=>"help",Command::Version=>"version",Command::ShellInit=>"shell_init",Command::Update=>"update",Command::Config=>"config",Command::RecordJump=>"jump_confirmed",Command::RecordJumpFailed=>"jump_failed",Command::Jump=>"navigate",Command::List=>"list"},"frequent":options.frequent,"copy_path":options.copy_path}),
+    );
     match options.command {
+        Command::RecordJumpFailed => {
+            usage::event(
+                "project_jump",
+                "error",
+                json!({"error_code":"shell_cd_failed"}),
+            );
+            ExitCode::SUCCESS
+        }
         Command::Help => {
             print_help(options.color);
             ExitCode::SUCCESS
@@ -312,6 +347,11 @@ fn run_record_jump(options: Options) -> ExitCode {
         }
     }
 
+    usage::event(
+        "project_jump",
+        "success",
+        json!({"stage":"shell_cd_completed"}),
+    );
     match record_jump(&history_path(&home), &project) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => fail(
@@ -675,7 +715,10 @@ fn prompt_loop(sectors: &[Sector], copy_path: bool, color: bool) -> ExitCode {
 
         let choice = match parse_choice(&input) {
             Ok(choice) => choice,
-            Err(ChoiceParseError::Empty) => return ExitCode::from(1),
+            Err(ChoiceParseError::Empty) => {
+                usage::event("project_selection", "canceled", json!({}));
+                return ExitCode::from(1);
+            }
             Err(error) => {
                 warn(error.message(), color);
                 continue;
@@ -706,6 +749,7 @@ fn frequent_prompt_loop(projects: &[RankedProject], copy_path: bool, color: bool
             Err(_) => return ExitCode::from(1),
         };
         if input.is_empty() {
+            usage::event("project_selection", "canceled", json!({"mode":"frequent"}));
             return ExitCode::from(1);
         }
 
@@ -782,6 +826,11 @@ fn path_for_choice(
 }
 
 fn emit_path(path: &std::path::Path, copy_path: bool, color: bool) -> ExitCode {
+    usage::event(
+        "project_selection",
+        "success",
+        json!({"copy_path":copy_path,"stage":"path_selected"}),
+    );
     if copy_path {
         return copy_to_clipboard(path, color);
     }
@@ -1111,6 +1160,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
             "--shell-init" => command = Command::ShellInit,
             "--copy-path" => copy_path = true,
             "--frequent" => frequent = true,
+            "--record-jump-failed" => command = Command::RecordJumpFailed,
             "--record-jump" => {
                 if command != Command::Jump || target.is_some() {
                     return Err(format!("unexpected argument: {arg}"));
@@ -1363,6 +1413,11 @@ fn read_terminal_choice() -> io::Result<String> {
 }
 
 fn fail(message: &str, color: bool) -> ExitCode {
+    usage::event(
+        "command_failure",
+        "error",
+        json!({"error_code":"operation_failed"}),
+    );
     eprintln!("{}", paint(color, RED, message));
     ExitCode::from(1)
 }
@@ -1376,6 +1431,11 @@ fn warn(message: &str, color: bool) {
 }
 
 fn config_warning(message: &str, color: bool) {
+    usage::event(
+        "configuration",
+        "blocked",
+        json!({"reason":"project_tree_mismatch"}),
+    );
     eprintln!(
         "  {} {}",
         paint(color, YELLOW, "!"),
@@ -1485,6 +1545,7 @@ function global:hop {{
     try {{
         Set-Location -LiteralPath $destination -ErrorAction Stop
     }} catch {{
+        & {binary} --record-jump-failed --no-color
         Write-Error "hop: invalid destination: $destination"
         return
     }}
@@ -1532,7 +1593,11 @@ function hop {{
         printf '%s\n' "hop: invalid destination: $destination" >&2
         return 1
     fi
-    builtin cd -- "$destination" || return $?
+    builtin cd -- "$destination" || {{
+        exit_status=$?
+        command {binary} --record-jump-failed --no-color || true
+        return "$exit_status"
+    }}
     command {binary} --record-jump "$destination" --no-color || true
 }}"#,
     )
