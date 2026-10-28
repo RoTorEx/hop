@@ -298,6 +298,20 @@ fn run_record_jump(options: Options) -> ExitCode {
         Err(message) => return fail(&message, options.color),
     };
 
+    if !project.join(".git").exists() {
+        let configured_root = load_project_config(&config_path(&home))
+            .map(|config| {
+                config
+                    .sections
+                    .iter()
+                    .any(|section| section.root == project)
+            })
+            .unwrap_or(false);
+        if !configured_root {
+            return ExitCode::SUCCESS;
+        }
+    }
+
     match record_jump(&history_path(&home), &project) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => fail(

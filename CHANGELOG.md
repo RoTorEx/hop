@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+- Count configured workspace-root jumps without recording the Toolbelt home shortcut as a project jump.
+
 ## [0.3.15] - 2026-10-28
 
 - Toolbelt migration: use `~/.toolbelt/<name>` for custom installations and update project-path references where applicable.
