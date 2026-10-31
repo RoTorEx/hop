@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.18] - 2026-10-31
+
 - Show a nested project root only through its child sector's implicit `0`, without duplicating it in the parent sector; preserve access when child repositories are unavailable.
 
 ## [0.3.17] - 2026-10-31
