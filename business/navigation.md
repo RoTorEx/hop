@@ -45,6 +45,12 @@ multiple letters, such as `AA0`. Project positions still start at `1`.
 Root selection is available only for visible sectors. The root need not contain `.git`;
 the shell bridge validates the directory before changing into it.
 
+When a project also roots a visible child sector, that sector's implicit `0`
+represents the project; omit its duplicate item in the parent sector. Resolve
+deeper sectors first and hide parent sectors left with no items. If a child
+sector has no available items, retain its Git root as a normal parent item so
+the project remains reachable. Saved selections are preserved across refreshes.
+
 `hop list` renders this same view and exits successfully without prompting for
 a selection. It does not select a project or record a jump.
 

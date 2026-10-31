@@ -397,7 +397,7 @@ pub fn configured_project_paths(config: &ProjectConfig) -> Vec<PathBuf> {
 
 #[must_use]
 pub fn configured_sectors(scan_root: &Path, config: &ProjectConfig) -> Vec<Sector> {
-    sorted_sections(config)
+    let mut sectors = sorted_sections(config)
         .into_iter()
         .map(|section| Sector {
             label: String::new(),
@@ -424,6 +424,28 @@ pub fn configured_sectors(scan_root: &Path, config: &ProjectConfig) -> Vec<Secto
                 .map(|item| item.display().to_string())
                 .collect(),
         })
+        .filter(|sector| !sector.paths.is_empty())
+        .collect::<Vec<_>>();
+    let mut deepest_first = (0..sectors.len()).collect::<Vec<_>>();
+    deepest_first.sort_by_key(|index| std::cmp::Reverse(sectors[*index].root.components().count()));
+    let mut represented_roots = BTreeSet::new();
+    for index in deepest_first {
+        let sector = &mut sectors[index];
+        let mut position = 0;
+        sector.item_names.retain(|_| {
+            let retain = !represented_roots.contains(&sector.paths[position]);
+            position += 1;
+            retain
+        });
+        sector
+            .paths
+            .retain(|path| !represented_roots.contains(path));
+        if !sector.paths.is_empty() {
+            represented_roots.insert(sector.root.clone());
+        }
+    }
+    sectors
+        .into_iter()
         .filter(|sector| !sector.paths.is_empty())
         .enumerate()
         .map(|(index, mut sector)| {

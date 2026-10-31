@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+- Show a nested project root only through its child sector's implicit `0`, without duplicating it in the parent sector; preserve access when child repositories are unavailable.
+
 ## [0.3.17] - 2026-10-31
 
 - Add bounded, metadata-only local product usage evidence; preserve business and recovery state.

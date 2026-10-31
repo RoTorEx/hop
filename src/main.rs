@@ -1881,6 +1881,42 @@ mod tests {
     }
 
     #[test]
+    fn nested_sector_root_uses_zero_without_a_duplicate_parent_item() {
+        let root = temp_root("nested-sector-root");
+        let cluster = root.join("cluster");
+        let child = cluster.join("web");
+        let standalone = root.join("standalone");
+        for path in [&cluster, &child, &standalone] {
+            fs::create_dir_all(path.join(".git")).unwrap();
+        }
+        let config = hop::parse_project_config(&format!(
+            "version = 4\n[[sections]]\nroot = {:?}\nitems = [\"cluster\", \"standalone\"]\n[[sections]]\nroot = {:?}\nitems = [\"web\"]\n",
+            root.display().to_string(),
+            cluster.display().to_string(),
+        ))
+        .unwrap();
+        let sectors = configured_sectors(&root, &config);
+        assert_eq!(sectors.len(), 2);
+        assert_eq!(sectors[0].paths, vec![standalone.clone()]);
+        assert_eq!(sectors[0].item_names, vec!["standalone"]);
+        assert_eq!(sectors[1].paths, vec![child.clone()]);
+        assert_eq!(
+            path_for_choice(&sectors, parse_choice("B0").unwrap()),
+            Ok(cluster.as_path())
+        );
+        assert_eq!(
+            path_for_choice(&sectors, parse_choice("B1").unwrap()),
+            Ok(child.as_path())
+        );
+
+        fs::remove_dir_all(child.join(".git")).unwrap();
+        let sectors = configured_sectors(&root, &config);
+        assert_eq!(sectors.len(), 1);
+        assert_eq!(sectors[0].paths, vec![cluster.clone(), standalone]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn sector_zero_selects_visible_root_after_empty_sections_are_hidden() {
         let root = temp_root("sector-root");
         let sector_root = root.join("work");
