@@ -69,9 +69,17 @@ hop b1
 hop --copy-path A1
 ```
 
-## Windows (x64)
+## Other platforms and previous Windows releases
 
-Releases include `hop-windows-x86_64.zip` containing `hop.exe`. Download it
+CI and future release assets target macOS only (Apple Silicon and Intel), using
+GitHub-hosted macOS runners. Linux/Windows source and existing release assets are
+retained, but no new Linux/Windows binaries are built. Linux users must update
+from source with the installer; `hop update` expects a release asset and will not
+find one for Linux in future macOS-only releases. The Windows download commands
+below apply only to older tags containing a Windows asset; use a specific such
+tag instead of `latest`, or build from source.
+
+Earlier releases include `hop-windows-x86_64.zip` containing `hop.exe`. Download it
 from [GitHub Releases](https://github.com/RoTorEx/hop/releases/latest), or run
 these commands in PowerShell once a Windows release is published:
 
@@ -79,7 +87,7 @@ these commands in PowerShell once a Windows release is published:
 $hopBin = Join-Path $env:USERPROFILE '.toolbelt/hop\bin'
 New-Item -ItemType Directory -Path $hopBin -Force | Out-Null
 $hopArchive = Join-Path $env:TEMP 'hop-windows-x86_64.zip'
-Invoke-WebRequest 'https://github.com/RoTorEx/hop/releases/latest/download/hop-windows-x86_64.zip' -OutFile $hopArchive
+Invoke-WebRequest 'https://github.com/RoTorEx/hop/releases/download/v0.3.19/hop-windows-x86_64.zip' -OutFile $hopArchive
 Expand-Archive -LiteralPath $hopArchive -DestinationPath $hopBin -Force
 Remove-Item -LiteralPath $hopArchive
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
