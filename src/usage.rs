@@ -256,7 +256,10 @@ fn append(
     loop {
         match lock.try_lock_exclusive() {
             Ok(()) => break,
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock && Instant::now() < deadline => {
+            Err(e)
+                if e.raw_os_error() == fs2::lock_contended_error().raw_os_error()
+                    && Instant::now() < deadline =>
+            {
                 std::thread::sleep(Duration::from_millis(2))
             }
             Err(e) => return Err(e),

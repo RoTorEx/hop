@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+- Retry usage-log lock contention using the platform error reported by fs2, preserving concurrent log writers on Windows as well as Unix.
+
 ## [0.3.18] - 2026-10-31
 
 - Show a nested project root only through its child sector's implicit `0`, without duplicating it in the parent sector; preserve access when child repositories are unavailable.
