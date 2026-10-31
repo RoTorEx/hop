@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.19] - 2026-10-31
+
 - Retry usage-log lock contention using the platform error reported by fs2, preserving concurrent log writers on Windows as well as Unix.
 
 ## [0.3.18] - 2026-10-31
