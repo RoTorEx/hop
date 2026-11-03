@@ -7,10 +7,10 @@ on developer machines, VMs, and VPS hosts.
 
 1. Normal jump mode requires `~/.toolbelt/hop/config.toml`; when it is missing,
    the binary fails with an alert to run `hop config`.
-2. Passing `--root <dir>` to jump mode performs an explicit ad hoc scan instead
-   of using the config.
-3. Every non-config command checks configured project availability. Single-root
-   configs also warn about newly discovered projects that are not excluded.
+2. Recursive project discovery runs only through `hop config`; `--root <dir>`
+   selects its scan scope and is rejected by other commands.
+3. Navigation checks only saved project availability. Help, version, shell init,
+   and update do not check the project tree.
 4. A directory below a scan root is treated as a project when it contains
    `.git`.
 5. Known noisy directories such as `construction_side`, `node_modules`,

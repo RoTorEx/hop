@@ -22,8 +22,9 @@ change to its shell integration.
   explicit `excluded` paths remain hidden. On Windows, its default scope is
   every ready local fixed disk so users do not need to specify drive letters.
   Linux/macOS default to the user home; `--root` explicitly limits either platform.
-- All-disk discovery runs on `hop config`; normal navigation uses the saved list
-  and checks known project availability without repeating a full disk scan.
+- Recursive discovery runs only on `hop config`, for every scan scope; normal
+  navigation uses the saved list and checks known project availability to keep
+  startup fast. `--root` is supported only by `hop config`.
 - The default view sorts sections by full root path and their items by relative path, and addresses them with
   selectors such as `A1`.
 - The frequent view globally ranks configured projects and section roots by successful jump

@@ -22,9 +22,11 @@ unavailable projects, are retained and deduplicated. Paths in the top-level `exc
 removing an item without excluding it only hides it until the next refresh.
 If drive enumeration or scanning a selected root fails, the config is not written.
 
-For all-disk configs, ordinary commands check only configured availability.
-Single-root configs warn when new projects are discovered or configured items
-disappear. A refresh keeps unavailable configured items for later recovery.
+Recursive discovery runs only through `hop config`, for every scan scope.
+Normal navigation uses the saved list and checks only configured availability
+to keep startup fast; it does not search for new projects or warn about tree
+differences. `--root` is supported only by `hop config`. A refresh keeps
+unavailable configured items for later recovery.
 
 ## Default view
 

@@ -112,8 +112,8 @@ Recycle Bin, recovery data), build outputs, links, and inaccessible subfolders.
 Mapped network drives, removable media, and disks that are not ready are excluded.
 For a deliberately limited scan, `hop config --root D:\Projects` still works.
 
-After an all-disk scan, ordinary `hop` uses the saved list and checks only whether
-known projects are available. It does not scan all disks again on every jump.
+For every scan scope, ordinary `hop` uses the saved list and checks only whether
+known projects are available. Recursive discovery runs only through `hop config`.
 Existing version 1–3 configs remain readable and `hop config` migrates them to
 explicit sections. Running `hop config` again scans for newly created projects;
 add paths to `excluded` to keep deliberate omissions hidden.
@@ -149,7 +149,7 @@ hop list --frequent
 hop --frequent
 hop --frequent 1
 hop update
-hop --root /srv
+hop config --root /srv
 ```
 
 Interactive UI, help, and version output are written to stderr. The installed
@@ -204,12 +204,12 @@ sections emptied by this regrouping disappear. All roots, including newly discov
 top-level `excluded = ["/path/to/project"]` array to keep projects hidden across
 refreshes. Removing an item without excluding it hides it only until the next
 refresh. Pass `--root <dir>` to change the saved scan scope.
-Passing `--root` to normal jump mode still performs an ad hoc scan instead of
-using the config.
+The `--root` option is supported only by `hop config`.
 
-For a single-root config, every non-config command checks whether configured
-items still exist and warns when new projects are found. An all-disk config
-checks known-project availability without rescanning every disk.
+Normal navigation checks only saved project availability, without recursively
+scanning directories or checking for new projects. Run `hop config` when you
+want to discover new projects. Help, version, shell initialization, and update
+do not inspect the project tree.
 
 Normal `hop` jump mode requires the config file. If it is missing, hop
 prints an alert and exits; run `hop config` first.

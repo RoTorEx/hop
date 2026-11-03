@@ -4,6 +4,10 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+- Limit recursive discovery to `hop config` so normal navigation, list, help,
+  and version no longer scan the project tree on startup. Restrict `--root` to
+  config refreshes; navigation continues to filter unavailable saved projects.
+
 - Limit CI and future release binaries to macOS Apple Silicon/Intel on GitHub-hosted runners; preserve existing source support and historical assets.
 
 ## [0.3.19] - 2026-10-31

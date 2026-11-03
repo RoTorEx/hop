@@ -13,8 +13,8 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use hop::{
     APP_NAME, ChoiceParseError, JumpHistory, ProjectConfig, RankedProject, Sector,
     active_project_paths, cli_home_path, config_path, configured_project_paths, configured_sectors,
-    diff_project_config_tree, discover_projects, group_projects, history_path, load_jump_history,
-    load_project_config, merge_project_config, parse_choice, rank_projects_by_jumps, record_jump,
+    discover_projects, group_projects, history_path, load_jump_history, load_project_config,
+    merge_project_config, parse_choice, rank_projects_by_jumps, record_jump,
     refresh_project_config, write_project_config,
 };
 
@@ -83,13 +83,6 @@ fn run_cli() -> ExitCode {
         Ok(options) => options,
         Err(message) => return fail(&message, colors_enabled()),
     };
-
-    if !matches!(
-        options.command,
-        Command::Config | Command::RecordJump | Command::RecordJumpFailed
-    ) {
-        warn_if_project_config_needs_refresh(&options);
-    }
 
     usage::event(
         "command_selected",
@@ -254,7 +247,7 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
         }
     }
 
-    let navigation = match projects_for_jump(&options) {
+    let navigation = match projects_for_jump() {
         Ok(projects) => projects,
         Err(message) => return fail(&message, options.color),
     };
@@ -503,18 +496,7 @@ fn run_config(options: Options) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn projects_for_jump(options: &Options) -> Result<NavigationProjects, String> {
-    if let Some(root) = &options.root {
-        let projects = discover_projects(root)
-            .map_err(|error| format!("Cannot scan {}: {error}", root.display()))?;
-        return Ok(NavigationProjects {
-            root: root.clone(),
-            projects,
-            sectors: None,
-            config_source: None,
-        });
-    }
-
+fn projects_for_jump() -> Result<NavigationProjects, String> {
     let home = home_dir()?;
     let path = config_path(&home);
     if path.exists() {
@@ -533,119 +515,6 @@ fn projects_for_jump(options: &Options) -> Result<NavigationProjects, String> {
         "Project config not found at {}; run `hop config` first.",
         path.display()
     ))
-}
-
-fn warn_if_project_config_needs_refresh(options: &Options) {
-    let home = match home_dir() {
-        Ok(home) => home,
-        Err(_) => return,
-    };
-    let path = config_path(&home);
-    let config = match load_project_config(&path) {
-        Ok(config) => config,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            if !uses_default_project_config(options) {
-                config_warning(
-                    &format!(
-                        "Project config not found at {}; run `hop config`.",
-                        path.display()
-                    ),
-                    options.color,
-                );
-            }
-            return;
-        }
-        Err(error) => {
-            if !uses_default_project_config(options) {
-                config_warning(
-                    &format!(
-                        "Cannot check project config freshness: cannot read {}: {error}.",
-                        path.display()
-                    ),
-                    options.color,
-                );
-            }
-            return;
-        }
-    };
-
-    // A full disk walk belongs to the explicit refresh, not every shell jump.
-    if config.scan_all_drives {
-        let missing = configured_project_paths(&config)
-            .iter()
-            .filter(|project| !project.join(".git").exists())
-            .count();
-        if missing > 0 {
-            config_warning(
-                &format!(
-                    "{missing} configured {} unavailable; edit section items.",
-                    project_word(missing)
-                ),
-                options.color,
-            );
-        }
-        return;
-    }
-
-    let scan_root = config.scan_root.as_deref().unwrap_or(&home);
-    let discovered = match discover_projects(scan_root) {
-        Ok(projects) => projects,
-        Err(error) => {
-            config_warning(
-                &format!(
-                    "Cannot check project tree against config: cannot scan {}: {error}. Run {} to refresh it.",
-                    scan_root.display(),
-                    "`hop config`",
-                ),
-                options.color,
-            );
-            return;
-        }
-    };
-
-    let diff = diff_project_config_tree(&config, &discovered);
-    if diff.is_empty() {
-        return;
-    }
-
-    config_warning(
-        &format!(
-            "Project tree differs from config: {}. Run {} to add new projects; edit section items to remove missing projects.",
-            project_tree_diff_summary(&diff),
-            "`hop config`",
-        ),
-        options.color,
-    );
-}
-
-fn uses_default_project_config(options: &Options) -> bool {
-    matches!(options.command, Command::Jump | Command::List) && options.root.is_none()
-}
-
-fn project_tree_diff_summary(diff: &hop::ProjectTreeDiff) -> String {
-    let mut parts = Vec::new();
-    let unconfigured = diff.unconfigured_projects.len();
-    let stale = diff.stale_projects.len();
-
-    if unconfigured > 0 {
-        parts.push(format!("{unconfigured} new {}", project_word(unconfigured)));
-    }
-    if stale > 0 {
-        parts.push(format!(
-            "{stale} missing configured {}",
-            project_word(stale)
-        ));
-    }
-
-    match parts.as_slice() {
-        [only] => only.clone(),
-        [first, second] => format!("{first} and {second}"),
-        _ => parts.join(", "),
-    }
-}
-
-fn project_word(count: usize) -> &'static str {
-    if count == 1 { "project" } else { "projects" }
 }
 
 fn load_optional_project_config(path: &Path) -> Result<Option<ProjectConfig>, String> {
@@ -673,7 +542,7 @@ fn home_dir() -> Result<PathBuf, String> {
     env::var_os(variable)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
-        .ok_or_else(|| format!("{variable} is not set; pass --root <dir>"))
+        .ok_or_else(|| format!("{variable} is not set"))
 }
 
 fn cli_home_shortcut_path(target: &str) -> Result<Option<PathBuf>, String> {
@@ -1220,6 +1089,10 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
         }
     }
 
+    if root.is_some() && command != Command::Config {
+        return Err("--root is only supported by `hop config --root <dir>`".to_owned());
+    }
+
     Ok(Options {
         command,
         root,
@@ -1430,19 +1303,6 @@ fn warn(message: &str, color: bool) {
     );
 }
 
-fn config_warning(message: &str, color: bool) {
-    usage::event(
-        "configuration",
-        "blocked",
-        json!({"reason":"project_tree_mismatch"}),
-    );
-    eprintln!(
-        "  {} {}",
-        paint(color, YELLOW, "!"),
-        paint(color, YELLOW, message),
-    );
-}
-
 fn paint(color: bool, code: &str, value: &str) -> String {
     if color {
         format!("{code}{value}{RESET}")
@@ -1471,8 +1331,8 @@ fn print_help(color: bool) {
 Tiny interactive project navigator for shells on local machines, VMs, and VPS hosts.
 
 {}:
-    hop [<target>] [--copy-path] [--frequent] [--root <dir>] [--no-color]
-    hop list [--frequent] [--root <dir>] [--no-color]
+    hop [<target>] [--copy-path] [--frequent] [--no-color]
+    hop list [--frequent] [--no-color]
     hop ~
     hop config [--root <dir>]
     hop update
@@ -1486,7 +1346,7 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 {}:
     --copy-path      Copy the selected path instead of printing it
     --frequent       Rank all projects by successful jump count
-    --root <dir>      Scan a directory instead of the user home
+    --root <dir>      Set the scan directory for hop config
     --no-color        Disable ANSI color output
     -v, -V, --version Print version
     -h, --help        Print help
@@ -1751,22 +1611,6 @@ mod tests {
         assert_eq!(
             installation_home(Path::new("/home/alex/.toolbelt/hop/bin/hop")),
             Some(Path::new("/home/alex/.toolbelt/hop")),
-        );
-    }
-
-    #[test]
-    fn summarizes_project_tree_diffs_for_terminal_warning() {
-        let diff = hop::ProjectTreeDiff {
-            unconfigured_projects: vec![
-                PathBuf::from("/home/alex/work/new-1"),
-                PathBuf::from("/home/alex/work/new-2"),
-            ],
-            stale_projects: vec![PathBuf::from("/home/alex/work/old")],
-        };
-
-        assert_eq!(
-            project_tree_diff_summary(&diff),
-            "2 new projects and 1 missing configured project"
         );
     }
 
