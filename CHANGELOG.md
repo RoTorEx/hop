@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.3.20] - 2026-11-03
+
 - Limit recursive discovery to `hop config` so normal navigation, list, help,
   and version no longer scan the project tree on startup. Restrict `--root` to
   config refreshes; navigation continues to filter unavailable saved projects.
