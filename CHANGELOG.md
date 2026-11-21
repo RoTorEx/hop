@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-21
+
 - Store Personal and Work destinations separately in `routing/personal.toml` and `routing/work.toml`.
 
 - Add `--scope personal|work` to navigation, with one flat owner per registered destination.
