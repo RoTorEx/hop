@@ -200,6 +200,54 @@ pub fn load_project_config(path: &Path) -> io::Result<ProjectConfig> {
         .map_err(|message| io::Error::new(io::ErrorKind::InvalidData, message))
 }
 
+pub fn routing_path(home: &Path) -> PathBuf {
+    cli_home_path(home).join("routing")
+}
+
+pub fn load_routing(
+    directory: &Path,
+    settings: Option<ProjectConfig>,
+) -> Result<ProjectConfig, String> {
+    let mut config = ProjectConfig {
+        version: SCOPED_CONFIG_VERSION,
+        scan_root: None,
+        scan_all_drives: false,
+        excluded: Vec::new(),
+        sections: Vec::new(),
+        projects: Vec::new(),
+    };
+    if let Some(settings) = settings {
+        config.scan_root = settings.scan_root;
+        config.scan_all_drives = settings.scan_all_drives;
+        config.excluded = settings.excluded;
+    }
+
+    for scope in [Scope::Personal, Scope::Work] {
+        let path = directory.join(format!("{}.toml", scope.name()));
+        let mut routing = load_project_config(&path)
+            .map_err(|error| format!("Cannot read {}: {error}", path.display()))?;
+        if routing.version != SCOPED_CONFIG_VERSION {
+            return Err(format!(
+                "{} requires version = {SCOPED_CONFIG_VERSION}",
+                path.display()
+            ));
+        }
+        if routing.scan_root.is_some() || routing.scan_all_drives || !routing.excluded.is_empty() {
+            return Err(format!(
+                "Put scan settings in config.toml, outside {}",
+                path.display()
+            ));
+        }
+        for section in &mut routing.sections {
+            section.scope = scope;
+        }
+        config.sections.extend(routing.sections);
+    }
+    validate_scoped_sections(&config.sections)
+        .map_err(|error| format!("Invalid routing in {}: {error}", directory.display()))?;
+    Ok(config)
+}
+
 pub fn write_project_config(path: &Path, config: &ProjectConfig) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;

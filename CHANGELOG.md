@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+- Store Personal and Work destinations separately in `routing/personal.toml` and `routing/work.toml`.
+
 - Add `--scope personal|work` to navigation, with one flat owner per registered destination.
 - Add read-only repository discovery through `hop scan` with progress and a candidate report.
 

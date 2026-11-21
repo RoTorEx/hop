@@ -5,8 +5,8 @@ on developer machines, VMs, and VPS hosts.
 
 ## Runtime Flow
 
-1. Normal jump mode requires `~/.toolbelt/hop/config.toml`; when it is missing,
-   the binary fails with an alert to run `hop config`.
+1. Jump mode loads both version 5 files under `~/.toolbelt/hop/routing/`.
+   Without the routing directory, it reads the legacy `config.toml`.
 2. Explicit `hop scan` walks the selected filesystem scope and reports candidates.
    Legacy `hop config` also scans when creating or refreshing a legacy config.
 3. Navigation checks only saved project availability. Help, version, shell init,
@@ -42,7 +42,7 @@ on developer machines, VMs, and VPS hosts.
     with `--frequent`, and exits without reading a selection or writing a path
     to stdout.
 
-Version 5 stores one flat set of sections. A section root can be a display
+Each routing file stores flat sections for one scope. A section root can be a display
 container or a registered destination. Parsing validates registered path
 ownership even across scopes. Navigation filters available destinations,
 assigns consecutive letters, and resolves the selector against that view.

@@ -6,8 +6,9 @@ Personal and Work are explicit saved scopes. Personal is the default from any
 working directory. The `--scope` flag selects one scope for jumps and lists,
 including the frequent view.
 
-A version 5 config records flat sections with a root, relative items, an
-optional `scope = "work"`, and an optional `jump_root = true`. Items are available when they contain `.git`. A section root with
+The version 5 files under `routing/` record flat sections with a root,
+relative items, and an optional `jump_root = true`. The filename determines
+scope. Items are available when they contain `.git`. A section root with
 `jump_root` is available when the directory exists. Other section roots only
 organize destinations. A destination can appear
 once across all sections and scopes. A destination's ancestor and descendant
@@ -28,9 +29,11 @@ all ready local fixed drives on Windows. It skips symlinks and known hidden,
 system, cache, and build directories, and skips inaccessible subdirectories.
 Discovery finds nested Git repositories.
 
-Version 1–4 configs retain the earlier automatic grouping by immediate parent
-through `hop config` for bootstrap and compatibility. They are read as Personal.
-Version 5 assigns groups explicitly. `hop config` validates the file and displays its path.
+When routing files are present, `config.toml` supplies shared scan settings,
+and `hop config` validates both routing files and displays their directory.
+When the routing directory is absent, Hop reads the single `config.toml`.
+Version 1–4 configs are Personal and retain legacy bootstrap and refresh
+through `hop config`. A single version 5 config may specify scope per section.
 
 ## Default view
 

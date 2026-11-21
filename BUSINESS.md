@@ -9,7 +9,8 @@ change to its shell integration.
 
 - The user owns the project configuration and all locally recorded jump data.
 - Discovery finds candidate Git repositories by their `.git` metadata.
-- Users assign saved destinations to flat sections in Personal or Work. Each
+- Users assign saved destinations to flat sections in `routing/personal.toml`
+  or `routing/work.toml`. Each
   section can register relative items and optionally its root via selector `0`.
 - A successful jump is a directory change completed by the installed shell
   integration, not merely a selection or copied path.

@@ -15,9 +15,9 @@ use hop::{
     APP_NAME, JumpHistory, ProjectConfig, RankedProject, SCOPED_CONFIG_VERSION, Scope, Sector,
     active_project_paths, cli_home_path, config_path, configured_project_paths, configured_sectors,
     discover_projects, discover_projects_with_progress, group_projects, history_path,
-    load_jump_history, load_project_config, merge_project_config, parse_choice,
-    rank_projects_by_jumps, record_jump, refresh_project_config, section_destinations,
-    write_project_config,
+    load_jump_history, load_project_config, load_routing, merge_project_config, parse_choice,
+    rank_projects_by_jumps, record_jump, refresh_project_config, routing_path,
+    section_destinations, write_project_config,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -375,8 +375,10 @@ fn run_record_jump(options: Options) -> ExitCode {
     };
 
     if !project.join(".git").exists() {
-        let configured_root = load_project_config(&config_path(&home))
-            .map(|config| {
+        let configured_root = load_saved_config(&home)
+            .ok()
+            .and_then(|(_, config)| config)
+            .is_some_and(|config| {
                 if config.version == SCOPED_CONFIG_VERSION {
                     config
                         .sections
@@ -388,8 +390,7 @@ fn run_record_jump(options: Options) -> ExitCode {
                         .iter()
                         .any(|section| section.root == project)
                 }
-            })
-            .unwrap_or(false);
+            });
         if !configured_root {
             return ExitCode::SUCCESS;
         }
@@ -479,10 +480,8 @@ fn run_discovery(options: Options, report_only: bool) -> ExitCode {
         Ok(home) => home,
         Err(message) => return fail(&message, options.color),
     };
-    let path = config_path(&home);
-
-    let existing = match load_optional_project_config(&path) {
-        Ok(existing) => existing,
+    let (path, existing) = match load_saved_config(&home) {
+        Ok(saved) => saved,
         Err(message) => return fail(&message, options.color),
     };
     if !report_only
@@ -709,10 +708,8 @@ fn print_scan_report(config: Option<&ProjectConfig>, roots: &[PathBuf], projects
 
 fn projects_for_jump(scope: Scope) -> Result<NavigationProjects, String> {
     let home = home_dir()?;
-    let path = config_path(&home);
-    if path.exists() {
-        let mut config = load_project_config(&path)
-            .map_err(|error| format!("Cannot read {}: {error}", path.display()))?;
+    let (path, config) = load_saved_config(&home)?;
+    if let Some(mut config) = config {
         if config.version == SCOPED_CONFIG_VERSION {
             config.sections.retain(|section| section.scope == scope);
         } else if scope == Scope::Work {
@@ -743,6 +740,20 @@ fn projects_for_jump(scope: Scope) -> Result<NavigationProjects, String> {
         "Project config not found at {}; run `hop config` first.",
         path.display()
     ))
+}
+
+fn load_saved_config(home: &Path) -> Result<(PathBuf, Option<ProjectConfig>), String> {
+    let settings_path = config_path(home);
+    let config = load_optional_project_config(&settings_path)?;
+    let routing = routing_path(home);
+    if routing
+        .try_exists()
+        .map_err(|error| format!("Cannot access {}: {error}", routing.display()))?
+    {
+        let config = load_routing(&routing, config)?;
+        return Ok((routing, Some(config)));
+    }
+    Ok((settings_path, config))
 }
 
 fn load_optional_project_config(path: &Path) -> Result<Option<ProjectConfig>, String> {

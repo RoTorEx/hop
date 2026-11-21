@@ -205,7 +205,11 @@ items = ["repo"]
             && !personal.contains("new-component")
             && !personal.contains("departed")
     );
-    assert!(!workspace.run(&["A0"]).status.success());
+    let unavailable_root = workspace.run(&["A0"]);
+    assert!(
+        !unavailable_root.status.success(),
+        "{unavailable_root:?}\n{personal}"
+    );
     let selected = |args: &[&str], directory| {
         let output = workspace.run(args);
         assert!(output.status.success(), "{output:?}");
@@ -282,4 +286,70 @@ items = ["repo"]
     let output = workspace.run(&["list"]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("overlap across sections"));
+}
+
+#[test]
+fn routing_files_define_scopes_and_share_validation() {
+    let workspace = Workspace::new();
+    let config = workspace.0.join(".toolbelt/hop/config.toml");
+    let routing = config.with_file_name("routing");
+    fs::create_dir_all(&routing).unwrap();
+    let personal = workspace.0.join("personal");
+    let work = workspace.0.join("work");
+    fs::create_dir_all(personal.join("local/.git")).unwrap();
+    fs::create_dir_all(work.join("company/.git")).unwrap();
+    let settings = format!(
+        "version = 5\nscan_root = {}\n",
+        serde_json::json!(workspace.0)
+    );
+    fs::write(&config, &settings).unwrap();
+    let section = |root: &std::path::Path, item: &str| {
+        format!(
+            "version = 5\n[[sections]]\nroot = {}\njump_root = true\nitems = [\"{item}\"]\n",
+            serde_json::json!(root)
+        )
+    };
+    let personal_file = routing.join("personal.toml");
+    let work_file = routing.join("work.toml");
+    let personal_routes = section(&personal, "local");
+    let work_routes = section(&work, "company");
+    fs::write(&personal_file, &personal_routes).unwrap();
+    let missing = workspace.run(&["list"]);
+    assert!(!missing.status.success());
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("work.toml"));
+    fs::write(&work_file, &work_routes).unwrap();
+
+    let personal_view = workspace.run(&["list"]);
+    assert!(personal_view.status.success(), "{personal_view:?}");
+    let personal_view = String::from_utf8_lossy(&personal_view.stderr);
+    assert!(personal_view.contains("local") && !personal_view.contains("company"));
+    let work_view = workspace.run(&["A0", "--scope", "work"]);
+    assert!(work_view.status.success(), "{work_view:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&work_view.stdout).trim(),
+        work.to_str().unwrap()
+    );
+    let jump = workspace.run(&["--record-jump", work.to_str().unwrap()]);
+    assert!(jump.status.success());
+    assert!(
+        String::from_utf8_lossy(&workspace.run(&["stats"]).stderr)
+            .contains("Total successful jumps: 1")
+    );
+
+    let scan = workspace.run(&["scan"]);
+    assert!(scan.status.success(), "{scan:?}");
+    assert!(String::from_utf8_lossy(&scan.stderr).contains("Found 2 repositories, 0 candidates"));
+    assert!(workspace.run(&["config"]).status.success());
+    assert_eq!(fs::read_to_string(&personal_file).unwrap(), personal_routes);
+    assert_eq!(fs::read_to_string(&work_file).unwrap(), work_routes);
+    assert_eq!(fs::read_to_string(&config).unwrap(), settings);
+
+    fs::write(
+        &work_file,
+        section(&personal.join("local/nested"), "component"),
+    )
+    .unwrap();
+    let conflict = workspace.run(&["list", "--scope", "work"]);
+    assert!(!conflict.status.success());
+    assert!(String::from_utf8_lossy(&conflict.stderr).contains("overlap across sections"));
 }

@@ -193,11 +193,18 @@ the saved config and checks registered paths without recursively scanning.
 
 ### Scoped configuration
 
-Use version 5 in `~/.toolbelt/hop/config.toml` to register groups explicitly.
+Save Personal destinations in `~/.toolbelt/hop/routing/personal.toml` and Work
+destinations in `~/.toolbelt/hop/routing/work.toml`. Both files use version 5.
+Use a file containing only `version = 5` for an empty scope. The filename
+determines scope. Shared scan settings live in the optional `config.toml`
+under the Hop home directory.
+
 Each group is one flat section. Its root labels the group and anchors its
 relative items. Set `jump_root = true` to make the root itself a destination
 through selector `0`. A root can be the only destination in a section and can
 be a directory without `.git`. Items must contain `.git` to appear.
+
+`routing/personal.toml`:
 
 ```toml
 version = 5
@@ -210,15 +217,20 @@ items = ["hop", "shelve"]
 root = "/home/alex/dev-tools/build-service"
 jump_root = true
 items = ["api", "worker"]
+```
+
+`routing/work.toml`:
+
+```toml
+version = 5
 
 [[sections]]
 root = "/home/alex/corporate/company"
-scope = "work"
 jump_root = true
 items = ["first-repo", "second-repo"]
 ```
 
-Sections default to `scope = "personal"`. In this example, Build Service appears
+In this example, Build Service appears
 only in its own section. Put a project or its components in one section. Hop
 rejects duplicate destinations and parent/child destinations assigned to
 different sections. An ordinary section root can contain other section roots
@@ -226,12 +238,12 @@ on disk because users jump only to its listed items.
 
 ### Register or move a project
 
-1. Open `~/.toolbelt/hop/config.toml`. For a version 5 file, `hop config` verifies
-   it and prints its location.
+1. Open the routing file for the scope. `hop config` validates both routing
+   files and prints their location.
 2. Add a repository path relative to the chosen section's `root` in its
    `items`. To register a separate project group, add one section with its
-   root, scope, and any component paths. If a destination moves between
-   sections, move its registration in the same edit. If a whole group moves
+   root and any component paths. If a destination moves between sections or
+   scopes, move its registration between the appropriate files. If a whole group moves
    together, change its `root` and keep the relative items.
 3. Run `hop list` or `hop list --scope work` to verify the destination and its
    selector. Selectors are positions in the active view.
@@ -246,15 +258,11 @@ root, the home directory on Linux and macOS when no root is saved, or ready
 local fixed drives on Windows. The report respects the top-level `excluded`
 list of absolute paths.
 
-With a missing config or a version 1–4 config, `hop config` retains the
-legacy bootstrap and refresh workflow and groups repositories by immediate
-parent. For manual configuration, create or edit the file with `version = 5`
-as shown above. When migrating existing sections, mark the Work sections and
-consolidate overlapping destinations. Add `jump_root = true` for each group
-root that should be reachable through selector `0`.
-
-Normal `hop` jump mode requires the config file. If it is missing, hop
-prints an alert and exits; run `hop config` first.
+When the routing directory is absent, Hop reads an existing `config.toml`
+as before. Without routing files, `hop config` retains bootstrap and refresh
+for version 1–4 configs. To migrate, split sections between the two routing
+files, consolidate overlapping destinations, and keep shared discovery
+settings in `config.toml`. Routing files take precedence for destinations.
 
 `hop update` replaces `~/.toolbelt/hop/bin/hop` and refreshes `init.zsh`
 from the latest Linux or macOS release for the current CPU architecture. It
@@ -282,8 +290,8 @@ updates release metadata, creates a dedicated release commit, and creates a
 `vX.Y.Z` tag. `make release-push` pushes `main` and tags.
 
 Pushing a `vX.Y.Z` tag triggers the GitHub Actions workflow that builds and
-attaches Linux and macOS x86_64 and aarch64 release binaries, plus a Windows
-x86_64 ZIP. Pushes to `main`, pull requests, and manual workflow runs build the
+attaches macOS x86_64 and aarch64 release binaries. Pushes to `main`, pull
+requests, and manual workflow runs build the
 same artifacts without publishing a release. Native targets run Rust tests;
 Windows also checks directory changes and history in PowerShell 5.1 and 7.
 
