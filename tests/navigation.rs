@@ -1,18 +1,21 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{fs, path::PathBuf, process::Command, time::SystemTime};
 
 struct Workspace(PathBuf);
 
 impl Workspace {
     fn new() -> Self {
+        static NEXT_WORKSPACE: AtomicUsize = AtomicUsize::new(0);
         let root = std::env::temp_dir().join(format!(
-            "hop-navigation-{}-{}",
+            "hop-navigation-{}-{}-{}",
             std::process::id(),
+            NEXT_WORKSPACE.fetch_add(1, Ordering::Relaxed),
             SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
         ));
-        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(&root).unwrap();
         Self(root)
     }
 
@@ -203,7 +206,8 @@ items = ["repo"]
     assert!(
         !personal.contains("company")
             && !personal.contains("new-component")
-            && !personal.contains("departed")
+            && !personal.contains("departed"),
+        "{personal}"
     );
     let unavailable_root = workspace.run(&["A0"]);
     assert!(
