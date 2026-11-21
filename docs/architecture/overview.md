@@ -7,16 +7,17 @@ on developer machines, VMs, and VPS hosts.
 
 1. Normal jump mode requires `~/.toolbelt/hop/config.toml`; when it is missing,
    the binary fails with an alert to run `hop config`.
-2. Recursive project discovery runs only through `hop config`; `--root <dir>`
-   selects its scan scope and is rejected by other commands.
+2. Explicit `hop scan` walks the selected filesystem scope and reports candidates.
+   Legacy `hop config` also scans when creating or refreshing a legacy config.
 3. Navigation checks only saved project availability. Help, version, shell init,
    and update do not check the project tree.
 4. A directory below a scan root is treated as a project when it contains
    `.git`.
 5. Known noisy directories such as `construction_side`, `node_modules`,
    `target`, virtualenvs, caches, and hidden directories are skipped.
-6. Version 4 sections are sorted by full root path and items by relative
-   path, using natural alphanumeric order in config output and navigation. Ad hoc scans retain automatic grouping by immediate parent.
+6. Sections sort by full root path and items by relative path, using natural
+   alphanumeric order. Version 5 filters explicit sections by Personal or Work,
+   and validates ownership across both scopes before selection.
 7. The interactive UI is written to stderr.
 8. Jump mode writes the selected path as the only stdout output.
 9. The `~` target is a shortcut for the hop home directory,
@@ -41,19 +42,16 @@ on developer machines, VMs, and VPS hosts.
     with `--frequent`, and exits without reading a selection or writing a path
     to stdout.
 
-`hop config` creates or refreshes the config by scanning `$HOME` on Unix, ready
-local fixed disks on Windows, or the saved scan root. An explicit `--root <dir>`
-changes the scan scope. Legacy active paths migrate to version 4 sections
-grouped by immediate parent. Refresh groups discovered and previously configured
-paths by immediate parent as well, moving nested entries out of broader sections.
-All roots are sorted alphanumerically by full path.
-Sections emptied by regrouping are removed, while explicitly empty sections remain. Top-level
-`excluded` paths are skipped. The command retains configured paths that are
-temporarily unavailable, while item order is derived from relative paths.
-Navigation filters out sections without available `.git` items before assigning
-consecutive labels. Hidden sections retain their config entries and reappear
-when a configured Git project becomes available; root selectors apply only to
-visible sections.
+Version 5 stores one flat set of sections. A section root can be a display
+container or a registered destination. Parsing validates registered path
+ownership even across scopes. Navigation filters available destinations,
+assigns consecutive letters, and resolves the selector against that view.
+The frequent view uses the same destinations and the history store.
+
+`hop scan` walks local directories and sends progress and its report to stderr,
+preserving the shell integration's stdout protocol. It does not write the
+project config. Legacy bootstrap and refresh through `hop config` group
+discovered repositories by immediate parent and save version 4.
 
 The binary never changes directory itself because child processes cannot change
 the parent shell's working directory; the installed `hop` shell wrapper
@@ -64,7 +62,7 @@ provides that behavior.
 - The CLI reads local directory metadata only.
 - `hop config` writes local project selection state to
   `~/.toolbelt/hop/config.toml`.
-- The CLI does not write logs or telemetry. It writes local successful-jump
+- The CLI writes bounded local usage logs and sends no telemetry. It writes local successful-jump
   counts to `~/.toolbelt/hop/history.toml`; `--copy-path` explicitly writes the
   selected path to the system clipboard.
 - Network access is limited to the optional installer, GitHub release flow, and
@@ -100,5 +98,5 @@ Windows default discovery queries PowerShell's
 ready drive roots, validates the returned drive-letter paths, and combines
 per-root scans. No Win32 unsafe code or new dependency is needed. Config format
 3 introduced `scan_all_drives = true`; format 4 adds explicit sections while
-retaining that scope. Full-drive scanning is limited to initial generation or
-legacy migration through `hop config`.
+retaining that scope. Full-drive scanning is available through `hop scan` or
+legacy config bootstrap and refresh.

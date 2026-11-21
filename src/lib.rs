@@ -10,6 +10,7 @@ pub const CONFIG_FILE_NAME: &str = "config.toml";
 pub const HISTORY_FILE_NAME: &str = "history.toml";
 
 const CONFIG_VERSION: u32 = 4;
+pub const SCOPED_CONFIG_VERSION: u32 = 5;
 const HISTORY_VERSION: u32 = 1;
 
 const SKIP_DIRS: &[&str] = &[
@@ -38,6 +39,7 @@ const SKIP_DIRS: &[&str] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sector {
     pub label: String,
+    pub jump_root: bool,
     pub root: PathBuf,
     pub name: String,
     pub above: String,
@@ -55,8 +57,26 @@ pub struct ProjectConfig {
     pub projects: Vec<ProjectConfigEntry>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Scope {
+    #[default]
+    Personal,
+    Work,
+}
+
+impl Scope {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Personal => "personal",
+            Self::Work => "work",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProjectSection {
+    pub scope: Scope,
+    pub jump_root: bool,
     pub root: PathBuf,
     pub items: Vec<PathBuf>,
 }
@@ -137,6 +157,13 @@ impl ChoiceParseError {
 }
 
 pub fn discover_projects(root: &Path) -> io::Result<Vec<PathBuf>> {
+    discover_projects_with_progress(root, |_, _| {})
+}
+
+pub fn discover_projects_with_progress(
+    root: &Path,
+    mut progress: impl FnMut(usize, usize),
+) -> io::Result<Vec<PathBuf>> {
     if !root.is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
@@ -145,7 +172,8 @@ pub fn discover_projects(root: &Path) -> io::Result<Vec<PathBuf>> {
     }
 
     let mut projects = Vec::new();
-    scan_dir(root, &mut projects, true)?;
+    let mut visited = 0;
+    scan_dir(root, &mut projects, true, &mut visited, &mut progress)?;
     projects.sort();
     projects.dedup();
     Ok(projects)
@@ -415,6 +443,8 @@ pub fn configured_sectors(scan_root: &Path, config: &ProjectConfig) -> Vec<Secto
         .into_iter()
         .map(|section| Sector {
             label: String::new(),
+            jump_root: config.version < SCOPED_CONFIG_VERSION
+                || section.jump_root && section.root.is_dir(),
             root: section.root.clone(),
             name: section
                 .root
@@ -438,8 +468,13 @@ pub fn configured_sectors(scan_root: &Path, config: &ProjectConfig) -> Vec<Secto
                 .map(|item| item.display().to_string())
                 .collect(),
         })
-        .filter(|sector| !sector.paths.is_empty())
+        .filter(|sector| {
+            !sector.paths.is_empty() || config.version == SCOPED_CONFIG_VERSION && sector.jump_root
+        })
         .collect::<Vec<_>>();
+    if config.version == SCOPED_CONFIG_VERSION {
+        return label_sectors(sectors);
+    }
     let mut deepest_first = (0..sectors.len()).collect::<Vec<_>>();
     deepest_first.sort_by_key(|index| std::cmp::Reverse(sectors[*index].root.components().count()));
     let mut represented_roots = BTreeSet::new();
@@ -458,9 +493,13 @@ pub fn configured_sectors(scan_root: &Path, config: &ProjectConfig) -> Vec<Secto
             represented_roots.insert(sector.root.clone());
         }
     }
+    sectors.retain(|sector| !sector.paths.is_empty());
+    label_sectors(sectors)
+}
+
+fn label_sectors(sectors: Vec<Sector>) -> Vec<Sector> {
     sectors
         .into_iter()
-        .filter(|sector| !sector.paths.is_empty())
         .enumerate()
         .map(|(index, mut sector)| {
             sector.label = label_for_index(index);
@@ -515,6 +554,18 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
 
         match (current_section.as_mut(), current_project.as_mut()) {
             (Some(section), None) => match key {
+                "scope" => {
+                    section.scope = Some(match parse_toml_string(value, line_number)?.as_str() {
+                        "personal" => Scope::Personal,
+                        "work" => Scope::Work,
+                        _ => {
+                            return Err(format!(
+                                "line {line_number}: scope must be personal or work"
+                            ));
+                        }
+                    });
+                }
+                "jump_root" => section.jump_root = Some(parse_toml_bool(value, line_number)?),
                 "root" => {
                     section.root = Some(PathBuf::from(parse_toml_string(value, line_number)?))
                 }
@@ -561,7 +612,7 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
     }
 
     let version = version.unwrap_or(1);
-    if !(1..=CONFIG_VERSION).contains(&version) {
+    if !(1..=SCOPED_CONFIG_VERSION).contains(&version) {
         return Err(format!("unsupported config version {version}"));
     }
 
@@ -569,16 +620,25 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
         return Err("scan_all_drives and scan_root cannot be combined".to_owned());
     }
     if version >= 4 && !projects.is_empty() {
-        return Err("config version 4 uses [[sections]], not [[projects]]".to_owned());
+        return Err("config versions 4 and 5 use [[sections]], not [[projects]]".to_owned());
     }
     if version < 4 && !sections.is_empty() {
-        return Err("[[sections]] require config version = 4".to_owned());
+        return Err("[[sections]] require config version 4 or 5".to_owned());
     }
     if version < 4 && !excluded.is_empty() {
-        return Err("excluded requires config version = 4".to_owned());
+        return Err("excluded requires config version 4 or 5".to_owned());
     }
     if excluded.iter().any(|path: &PathBuf| !path.is_absolute()) {
         return Err("excluded paths must be absolute".to_owned());
+    }
+
+    if version == SCOPED_CONFIG_VERSION {
+        validate_scoped_sections(&sections)?;
+    } else if sections
+        .iter()
+        .any(|section| section.scope == Scope::Work || section.jump_root)
+    {
+        return Err("scope and jump_root require config version = 5".to_owned());
     }
 
     Ok(ProjectConfig {
@@ -591,12 +651,79 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
     })
 }
 
+/// A landing path owns its subtree within one flat section.
+fn validate_scoped_sections(sections: &[ProjectSection]) -> Result<(), String> {
+    use std::path::Component;
+
+    let mut roots = BTreeSet::new();
+    let mut destinations: BTreeMap<PathBuf, usize> = BTreeMap::new();
+    for (index, section) in sections.iter().enumerate() {
+        if !section.root.is_absolute()
+            || section
+                .root
+                .components()
+                .any(|part| part == Component::ParentDir)
+        {
+            return Err(format!(
+                "section root must be an absolute path without '..': {}",
+                section.root.display()
+            ));
+        }
+        if !roots.insert(&section.root) {
+            return Err(format!(
+                "duplicate section root: {}",
+                section.root.display()
+            ));
+        }
+        for path in section_destinations(section) {
+            if path == section.root && !section.jump_root {
+                return Err(format!(
+                    "section item must be a relative descendant: {}",
+                    path.display()
+                ));
+            }
+            // Resolve aliases for destinations that currently exist. Keep the
+            // configured path as a key too so absent paths still have ownership.
+            let canonical = fs::canonicalize(&path).ok();
+            for key in std::iter::once(&path).chain(canonical.as_ref().filter(|key| **key != path))
+            {
+                if destinations.insert(key.clone(), index).is_some() {
+                    return Err(format!("duplicate jump destination: {}", path.display()));
+                }
+            }
+        }
+    }
+    for (path, owner) in &destinations {
+        if let Some(parent) = path.ancestors().skip(1).find(|ancestor| {
+            destinations
+                .get(*ancestor)
+                .is_some_and(|other| other != owner)
+        }) {
+            return Err(format!(
+                "jump destinations overlap across sections: {} and {}",
+                parent.display(),
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn section_destinations(section: &ProjectSection) -> impl Iterator<Item = PathBuf> + '_ {
+    section
+        .jump_root
+        .then(|| section.root.clone())
+        .into_iter()
+        .chain(section.items.iter().map(|item| section.root.join(item)))
+}
+
 #[must_use]
 pub fn render_project_config(config: &ProjectConfig) -> String {
     let mut output = String::from(
         "# hop project config\n# Every section lists exactly the projects shown by Hop.\n# Sections are sorted by full root path; items by relative path.\n\n",
     );
-    output.push_str(&format!("version = {CONFIG_VERSION}\n"));
+    let version = config.version.max(CONFIG_VERSION);
+    output.push_str(&format!("version = {version}\n"));
     if config.scan_all_drives {
         output.push_str("scan_all_drives = true\n");
     }
@@ -618,7 +745,14 @@ pub fn render_project_config(config: &ProjectConfig) -> String {
     for section in sorted_sections(config) {
         output.push_str("\n[[sections]]\nroot = \"");
         push_toml_string(&mut output, &section.root.display().to_string());
-        output.push_str("\"\nitems = [\n");
+        output.push_str("\"\n");
+        if version == SCOPED_CONFIG_VERSION {
+            output.push_str(&format!("scope = \"{}\"\n", section.scope.name()));
+            if section.jump_root {
+                output.push_str("jump_root = true\n");
+            }
+        }
+        output.push_str("items = [\n");
         for item in sorted_section_items(section) {
             output.push_str("  \"");
             push_toml_string(&mut output, &item.display().to_string());
@@ -727,6 +861,7 @@ pub fn group_projects(scan_root: &Path, projects: Vec<PathBuf>) -> Vec<Sector> {
             paths.sort();
             Sector {
                 label: label_for_index(index),
+                jump_root: true,
                 root: paths[0].parent().unwrap_or(scan_root).to_path_buf(),
                 name,
                 above,
@@ -755,7 +890,11 @@ fn sections_from_paths(projects: Vec<PathBuf>) -> Vec<ProjectSection> {
         .into_iter()
         .map(|(root, mut items)| {
             items.sort_by(|left, right| compare_paths_alphanumeric(left, right));
-            ProjectSection { root, items }
+            ProjectSection {
+                root,
+                items,
+                ..ProjectSection::default()
+            }
         })
         .collect::<Vec<_>>();
     sections.sort_by(|left, right| compare_paths_alphanumeric(&left.root, &right.root));
@@ -927,6 +1066,8 @@ struct ProjectConfigEntryDraft {
 
 #[derive(Default)]
 struct ProjectSectionDraft {
+    scope: Option<Scope>,
+    jump_root: Option<bool>,
     root: Option<PathBuf>,
     items: Option<Vec<PathBuf>>,
 }
@@ -982,7 +1123,12 @@ fn finish_project_section(
             ));
         }
     }
-    sections.push(ProjectSection { root, items });
+    sections.push(ProjectSection {
+        root,
+        items,
+        scope: section.scope.unwrap_or_default(),
+        jump_root: section.jump_root.unwrap_or(false),
+    });
     Ok(())
 }
 
@@ -1218,10 +1364,19 @@ fn push_toml_string(output: &mut String, value: &str) {
     }
 }
 
-fn scan_dir(root: &Path, out: &mut Vec<PathBuf>, is_root: bool) -> io::Result<()> {
+fn scan_dir(
+    root: &Path,
+    out: &mut Vec<PathBuf>,
+    is_root: bool,
+    visited: &mut usize,
+    progress: &mut impl FnMut(usize, usize),
+) -> io::Result<()> {
     if root.join(".git").exists() {
         out.push(root.to_path_buf());
     }
+
+    *visited += 1;
+    progress(*visited, out.len());
 
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
@@ -1248,7 +1403,7 @@ fn scan_dir(root: &Path, out: &mut Vec<PathBuf>, is_root: bool) -> io::Result<()
             continue;
         }
 
-        scan_dir(&path, out, false)?;
+        scan_dir(&path, out, false, visited, progress)?;
     }
 
     Ok(())
@@ -1418,6 +1573,7 @@ items = [
                 sections: vec![ProjectSection {
                     root: PathBuf::from("/home/alex/work"),
                     items: vec![PathBuf::from("deep/tools"), PathBuf::from("hop")],
+                    ..ProjectSection::default()
                 }],
                 projects: Vec::new(),
             }
@@ -1445,6 +1601,7 @@ items = [
             sections: vec![ProjectSection {
                 root: PathBuf::from(r"D:\Projects"),
                 items: vec![PathBuf::from("hop")],
+                ..ProjectSection::default()
             }],
             projects: Vec::new(),
         };
@@ -1555,6 +1712,7 @@ active = true
             vec![ProjectSection {
                 root: PathBuf::from("/home/alex/work"),
                 items: vec![PathBuf::from("new-project")],
+                ..ProjectSection::default()
             }]
         );
         assert!(merged.projects.is_empty());
@@ -1597,6 +1755,7 @@ active = true
             sections: vec![ProjectSection {
                 root: PathBuf::from("/home/alex/work"),
                 items: vec![PathBuf::from("project-10"), PathBuf::from("project-2")],
+                ..ProjectSection::default()
             }],
             projects: Vec::new(),
         };
@@ -1627,18 +1786,22 @@ active = true
                 ProjectSection {
                     root: empty,
                     items: Vec::new(),
+                    ..ProjectSection::default()
                 },
                 ProjectSection {
                     root: stale.clone(),
                     items: vec![PathBuf::from("project")],
+                    ..ProjectSection::default()
                 },
                 ProjectSection {
                     root: missing,
                     items: vec![PathBuf::from("project")],
+                    ..ProjectSection::default()
                 },
                 ProjectSection {
                     root: available.clone(),
                     items: vec![PathBuf::from("gone"), PathBuf::from("project")],
+                    ..ProjectSection::default()
                 },
             ],
             projects: Vec::new(),
@@ -1689,10 +1852,12 @@ active = true
                 ProjectSection {
                     root: last.clone(),
                     items: vec![PathBuf::from("project")],
+                    ..ProjectSection::default()
                 },
                 ProjectSection {
                     root: first.clone(),
                     items,
+                    ..ProjectSection::default()
                 },
             ],
             projects: Vec::new(),
@@ -1795,6 +1960,7 @@ active = true
             sections: vec![ProjectSection {
                 root: PathBuf::from("/home/alex/work"),
                 items: vec![PathBuf::from("configured"), PathBuf::from("stale")],
+                ..ProjectSection::default()
             }],
             projects: Vec::new(),
         };
@@ -1825,6 +1991,7 @@ active = true
             sections: vec![ProjectSection {
                 root: work.clone(),
                 items: vec![PathBuf::from("old"), PathBuf::from("nested/project")],
+                ..ProjectSection::default()
             }],
             projects: Vec::new(),
         };
@@ -1880,14 +2047,17 @@ active = true
                         PathBuf::from("work/Aveni/first"),
                         PathBuf::from("work/Aveni/offline"),
                     ],
+                    ..ProjectSection::default()
                 },
                 ProjectSection {
                     root: cli.clone(),
                     items: vec![PathBuf::from("hop")],
+                    ..ProjectSection::default()
                 },
                 ProjectSection {
                     root: aveni.clone(),
                     items: vec![PathBuf::from("first")],
+                    ..ProjectSection::default()
                 },
             ],
             projects: Vec::new(),

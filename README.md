@@ -140,6 +140,9 @@ cargo build --release --locked
 ```bash
 hop --help
 hop ~
+hop personal
+hop work
+hop scan
 hop config
 hop -v
 hop A1
@@ -181,41 +184,59 @@ outcome for the retained local log. Search time runs from the selection prompt
 to a valid selection or cancellation, including time spent on invalid attempts.
 Direct selectors, piped input, and copy mode are excluded.
 
-`hop config` scans `$HOME` on Linux/macOS or all ready local fixed disks on
-Windows and creates `~/.toolbelt/hop/config.toml`. It also migrates version 1–3
-configs. Version 4 makes selection and grouping explicit:
+Hop defaults to Personal, regardless of the current directory. Use `hop work`
+for Work, `hop work A1` for a direct jump, and `hop list work` to preview.
+Selectors and the frequent view use only the selected scope. Navigation loads
+the saved config and checks registered paths without recursively scanning.
+
+### Scoped configuration
+
+Use version 5 in `~/.toolbelt/hop/config.toml` to register groups explicitly.
+Each group is one flat section. Its root labels the group and anchors its
+relative items. Set `jump_root = true` to make the root itself a destination
+through selector `0`. A root can be the only destination in a section and can
+be a directory without `.git`. Items must contain `.git` to appear.
 
 ```toml
-version = 4
-scan_root = "/Users/alex"
-excluded = ["/Users/alex/Documents/WorkSpace/Development/personal/tools/hidden-project"]
+version = 5
 
 [[sections]]
-root = "/Users/alex/Documents/WorkSpace/Development/personal/tools"
-items = [
-  "hop",
-  "shelve",
-  "experiments/deep-project",
-]
+root = "/home/alex/dev-tools"
+items = ["hop", "shelve"]
+
+[[sections]]
+root = "/home/alex/dev-tools/build-service"
+jump_root = true
+items = ["api", "worker"]
+
+[[sections]]
+root = "/home/alex/corporate/company"
+scope = "work"
+jump_root = true
+items = ["first-repo", "second-repo"]
 ```
 
-Every section requires `items`. Each item is a relative descendant of `root`
-at any depth. Sections are sorted alphanumerically by full root path; items are sorted by
-relative path, including nested components. Numeric runs use natural order
-(`project-2` before `project-10`). The same order applies in the CLI and config.
-Running `hop config` again scans the saved scope and adds new Git projects to
-sections rooted at their immediate parent directory without removing configured
-paths. Existing nested entries are moved to those parent sections as well;
-sections emptied by this regrouping disappear. All roots, including newly discovered ones, are sorted by full path. Put absolute paths in a
-top-level `excluded = ["/path/to/project"]` array to keep projects hidden across
-refreshes. Removing an item without excluding it hides it only until the next
-refresh. Pass `--root <dir>` to change the saved scan scope.
-The `--root` option is supported only by `hop config`.
+Sections default to `scope = "personal"`. In this example, Build Service appears
+only in its own section. Put a project or its components in one section. Hop
+rejects duplicate destinations and parent/child destinations assigned to
+different sections. An ordinary section root can contain other section roots
+on disk because users jump only to its listed items.
 
-Normal navigation checks only saved project availability, without recursively
-scanning directories or checking for new projects. Run `hop config` when you
-want to discover new projects. Help, version, shell initialization, and update
-do not inspect the project tree.
+Run `hop scan` for a progress display and a report of new candidates, discovered
+repositories inside registered destinations, and unavailable destinations in
+the scanned area. It uses the saved scan root, the home directory on Linux and
+macOS when no scope is saved, or ready local fixed drives on Windows. Use
+`hop scan --root <dir>` to choose a directory explicitly. The scan leaves
+registration to the user and respects absolute paths in the top-level
+`excluded` list.
+
+`hop config` points to the editable configuration for version 5. With a missing
+config or a version 1–4 config, it retains the legacy bootstrap and refresh
+workflow and groups discovered repositories by immediate parent. To migrate an
+existing config, back it up, change `version` to `5`, mark the work sections,
+and consolidate any destinations that overlap. Add `jump_root = true` only
+where a group root should be a destination. Verify with `hop list personal`
+and `hop list work`. Use a build that supports version 5 with the new file.
 
 Normal `hop` jump mode requires the config file. If it is missing, hop
 prints an alert and exits; run `hop config` first.

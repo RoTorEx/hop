@@ -1,38 +1,41 @@
 # Navigation and Ranking
 
-## Discovery scope
+## Scopes and discovery
 
-On Windows, `hop config` automatically enumerates ready fixed local drives and
-searches each one for directories containing `.git`. Removable, network, and
-unready drives are excluded; the user does not need to supply drive letters.
-Discovery skips Windows system/application data folders, ordinary build/cache
-folders, links, and inaccessible subdirectories. Linux/macOS keep the home
-folder default. An explicit `--root` selects a single directory on any platform.
+Personal and Work are explicit saved scopes. Personal is the default from any
+working directory. Jump, list, and frequent views select from one scope at a time.
 
-The config records either a single scan root or `scan_all_drives = true`.
-Config format version 4 adds explicit `[[sections]]`, each with a `root` and a
-required `items` array. Items are relative descendants at any depth. Versions
-1–3 remain readable and `hop config` migrates their active paths. For version 4,
-`hop config` rescans the saved scope and groups projects by their immediate parent directory. A project under
-`work/Aveni` belongs to a section rooted at `work/Aveni`, even if a broader
-`dev` section exists. Refresh also moves already configured nested items to
-their immediate parent sections. All sections are sorted alphanumerically by their full root paths;
-sections emptied by regrouping are removed. Explicitly empty sections remain in the config. Configured paths, including
-unavailable projects, are retained and deduplicated. Paths in the top-level `excluded` array stay hidden on refresh;
-removing an item without excluding it only hides it until the next refresh.
-If drive enumeration or scanning a selected root fails, the config is not written.
+A version 5 config records flat sections with a root, relative items, an
+optional `scope = "work"`, and an optional `jump_root = true`. Items are available when they contain `.git`. A section root with
+`jump_root` is available when the directory exists. Other section roots only
+organize destinations. A destination can appear
+once across all sections and scopes. A destination's ancestor and descendant
+may coexist in one section, for example a service group root and its components.
+Hop rejects that overlap across sections, including resolved aliases for
+available paths. A folder may physically contain different groups when the
+containing section does not register the nested group's path or its ancestor.
 
-Recursive discovery runs only through `hop config`, for every scan scope.
-Normal navigation uses the saved list and checks only configured availability
-to keep startup fast; it does not search for new projects or warn about tree
-differences. `--root` is supported only by `hop config`. A refresh keeps
-unavailable configured items for later recovery.
+`hop scan` finds repositories recursively, reports progress, and leaves the
+config unchanged. It reports a repository under a registered destination as
+inside that destination. Other unregistered repositories are candidates rather
+than immediate menu entries. A moved project appears as an unavailable saved
+path and a newly discovered checkout until someone updates its registered
+location. Hop cannot infer a move from two paths alone.
+
+Scanning uses an explicit `--root`, the saved scope, the user home on Unix, or
+all ready local fixed drives on Windows. It skips symlinks and known hidden,
+system, cache, and build directories, and skips inaccessible subdirectories.
+Discovery finds nested Git repositories.
+
+Version 1–4 configs retain the earlier automatic grouping by immediate parent
+through `hop config` for bootstrap and compatibility. They are read as Personal.
+Version 5 assigns groups explicitly and `hop config` displays the file to edit.
 
 ## Default view
 
-The default view shows only sections with at least one available Git project.
-Empty sections and sections whose configured items all lack `.git` are hidden;
-their saved entries are retained and become visible when projects are available again.
+Version 5 shows available items and sections with a configured, available
+root jump. Unavailable destinations remain in the config for recovery.
+Legacy version 4 sections require at least one available Git project.
 Labels are assigned consecutively after filtering, so hidden sections occupy no selectors.
 Sectors are sorted alphanumerically by their
 full root paths, and items within each sector by their relative paths, including
@@ -44,10 +47,10 @@ sector label and one-based position, for example `B2`. Position `0` selects
 the sector's exact root directory: `hop A0` or interactive `A0` jumps there,
 and `hop --copy-path A0` copies it. Labels are case-insensitive and may contain
 multiple letters, such as `AA0`. Project positions still start at `1`.
-Root selection is available only for visible sectors. The root need not contain `.git`;
+In version 5, root selection is available only with `jump_root = true`. The root need not contain `.git`;
 the shell bridge validates the directory before changing into it.
 
-When a project also roots a visible child sector, that sector's implicit `0`
+In legacy configs, when a project also roots a visible child sector, that sector's implicit `0`
 represents the project; omit its duplicate item in the parent sector. Resolve
 deeper sectors first and hide parent sectors left with no items. If a child
 sector has no available items, retain its Git root as a normal parent item so
@@ -70,7 +73,7 @@ prevent a true global frequency ordering. Positions are one-based plain numbers
 (`1`, `2`, and so on); sector letters are intentionally absent in this view.
 `hop list --frequent` renders this same ranked view without prompting.
 
-All available configured projects remain visible. Projects are ordered by descending
+All available destinations in the selected scope remain visible. Destinations are ordered by descending
 successful jump count. Equal counts are resolved by alphanumeric full-path
 order, which makes a new or empty history deterministic. Counts are unsigned
 64-bit values and saturate at their maximum instead of wrapping.

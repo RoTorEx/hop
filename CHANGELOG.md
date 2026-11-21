@@ -4,6 +4,9 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+- Add Personal and Work navigation with one flat owner per registered destination.
+- Add read-only repository discovery through `hop scan` with progress and a candidate report.
+
 - Add `hop stats` for total jumps, counts by destination, and local interactive search times by view and outcome.
 
 ## [0.3.20] - 2026-11-03

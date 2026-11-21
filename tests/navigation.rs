@@ -19,6 +19,7 @@ impl Workspace {
     fn run(&self, args: &[&str]) -> std::process::Output {
         Command::new(env!("CARGO_BIN_EXE_hop"))
             .args(args)
+            .current_dir(&self.0)
             .env("HOME", &self.0)
             .env("USERPROFILE", &self.0)
             .env("NO_COLOR", "1")
@@ -39,7 +40,8 @@ fn projects_are_discovered_only_on_explicit_config_refresh() {
     let projects = workspace.0.join("projects");
     fs::create_dir_all(projects.join("saved-project/.git")).unwrap();
     let refresh = || workspace.run(&["config", "--root", projects.to_str().unwrap()]);
-    assert!(refresh().status.success());
+    let refreshed = refresh();
+    assert!(refreshed.status.success(), "{refreshed:?}");
 
     fs::create_dir_all(projects.join("new-project/.git")).unwrap();
     for args in [vec!["list"], vec![], vec!["--version"], vec!["--help"]] {
@@ -55,7 +57,8 @@ fn projects_are_discovered_only_on_explicit_config_refresh() {
         assert!(!ui.contains("differs from config"), "{ui}");
     }
 
-    assert!(refresh().status.success());
+    let refreshed = refresh();
+    assert!(refreshed.status.success(), "{refreshed:?}");
     let output = workspace.run(&["list"]);
     assert!(output.status.success());
     assert!(
@@ -151,4 +154,102 @@ fn stats_use_recorded_jumps_and_retained_search_events() {
         report.contains("frequent, canceled: 1 searches, 1.50 s average"),
         "{report}"
     );
+}
+
+#[test]
+fn scopes_use_saved_membership_and_scan_reports_only() {
+    let workspace = Workspace::new();
+    let projects = workspace.0.join("projects");
+    for folder in ["dev-tools/hop", "dev-tools/services/api", "company/repo"] {
+        fs::create_dir_all(projects.join(folder).join(".git")).unwrap();
+    }
+    fs::create_dir_all(projects.join("dev-tools/services/new-component/.git")).unwrap();
+    fs::create_dir_all(projects.join("unregistered/.git")).unwrap();
+
+    fs::create_dir_all(projects.join("dev-tools/departed")).unwrap();
+
+    let config_dir = workspace.0.join(".toolbelt/hop");
+    fs::create_dir_all(&config_dir).unwrap();
+    let config_path = config_dir.join("config.toml");
+    let config = format!(
+        r#"version = 5
+[[sections]]
+root = {personal}
+items = ["hop", "departed"]
+[[sections]]
+root = {services}
+jump_root = true
+items = ["api"]
+[[sections]]
+root = {work}
+scope = "work"
+jump_root = true
+items = ["repo"]
+"#,
+        personal = serde_json::json!(projects.join("dev-tools")),
+        services = serde_json::json!(projects.join("dev-tools/services")),
+        work = serde_json::json!(projects.join("company")),
+    );
+    fs::write(&config_path, &config).unwrap();
+
+    let personal = workspace.run(&["list"]);
+    assert!(personal.status.success(), "{personal:?}");
+    assert_eq!(personal.stderr, workspace.run(&["list", "personal"]).stderr);
+    let personal = String::from_utf8(personal.stderr).unwrap();
+    assert!(personal.contains("Projects (personal)") && personal.contains("services"));
+    assert!(
+        !personal.contains("company")
+            && !personal.contains("new-component")
+            && !personal.contains("departed")
+    );
+    assert!(!workspace.run(&["A0"]).status.success());
+    let selected = |args: &[&str], directory| {
+        let output = workspace.run(args);
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap().trim(),
+            projects.join(directory).to_str().unwrap()
+        );
+    };
+    selected(&["B0"], "dev-tools/services");
+    selected(&["work", "A0"], "company");
+    selected(&["work", "A1"], "company/repo");
+
+    let work = workspace.run(&["list", "work", "--frequent"]);
+    assert!(work.status.success(), "{work:?}");
+    let listing = String::from_utf8(work.stderr).unwrap();
+    assert!(listing.contains("company") && !listing.contains("dev-tools"));
+
+    let scan = workspace.run(&["scan", "--root", "projects"]);
+    assert!(scan.status.success() && scan.stdout.is_empty(), "{scan:?}");
+    let report = String::from_utf8(scan.stderr).unwrap();
+    assert!(report.contains("directories, 5 repositories"), "{report}");
+    assert!(
+        report.contains("1 candidates, 1 unavailable destinations"),
+        "{report}"
+    );
+    assert!(
+        report.contains("Inside ") && report.contains("new-component"),
+        "{report}"
+    );
+    assert_eq!(fs::read_to_string(&config_path).unwrap(), config);
+    assert!(workspace.run(&["config"]).status.success());
+    assert_eq!(fs::read_to_string(&config_path).unwrap(), config);
+
+    // Listing both the parent project and an inner section would split ownership.
+    let conflict = config.replace(r#"["hop", "departed"]"#, r#"["hop", "services"]"#);
+    fs::write(&config_path, conflict).unwrap();
+    let output = workspace.run(&["list", "work"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("duplicate jump destination"));
+
+    let cross_scope = config.replace(r#"items = ["api"]"#, r#"items = []"#)
+        + &format!(
+            "\n[[sections]]\nroot = {}\nscope = \"work\"\njump_root = true\nitems = []\n",
+            serde_json::json!(projects.join("dev-tools/services/api"))
+        );
+    fs::write(&config_path, cross_scope).unwrap();
+    let output = workspace.run(&["list"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("overlap across sections"));
 }

@@ -12,10 +12,11 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
 use hop::{
-    APP_NAME, JumpHistory, ProjectConfig, RankedProject, Sector, active_project_paths,
-    cli_home_path, config_path, configured_project_paths, configured_sectors, discover_projects,
-    group_projects, history_path, load_jump_history, load_project_config, merge_project_config,
-    parse_choice, rank_projects_by_jumps, record_jump, refresh_project_config,
+    APP_NAME, JumpHistory, ProjectConfig, RankedProject, SCOPED_CONFIG_VERSION, Scope, Sector,
+    active_project_paths, cli_home_path, config_path, configured_project_paths, configured_sectors,
+    discover_projects, discover_projects_with_progress, group_projects, history_path,
+    load_jump_history, load_project_config, merge_project_config, parse_choice,
+    rank_projects_by_jumps, record_jump, refresh_project_config, section_destinations,
     write_project_config,
 };
 
@@ -43,6 +44,7 @@ enum Command {
     ShellInit,
     Update,
     Config,
+    Scan,
     RecordJump,
     RecordJumpFailed,
 }
@@ -57,6 +59,7 @@ struct NavigationProjects {
 #[derive(Debug)]
 struct Options {
     command: Command,
+    scope: Scope,
     root: Option<PathBuf>,
     target: Option<String>,
     copy_path: bool,
@@ -89,7 +92,7 @@ fn run_cli() -> ExitCode {
     usage::event(
         "command_selected",
         "started",
-        json!({"mode":match options.command {Command::Help=>"help",Command::Version=>"version",Command::ShellInit=>"shell_init",Command::Update=>"update",Command::Config=>"config",Command::RecordJump=>"jump_confirmed",Command::RecordJumpFailed=>"jump_failed",Command::Jump=>"navigate",Command::List=>"list",Command::Stats=>"stats"},"frequent":options.frequent,"copy_path":options.copy_path}),
+        json!({"mode":match options.command {Command::Help=>"help",Command::Version=>"version",Command::ShellInit=>"shell_init",Command::Update=>"update",Command::Config=>"config",Command::Scan=>"scan",Command::RecordJump=>"jump_confirmed",Command::RecordJumpFailed=>"jump_failed",Command::Jump=>"navigate",Command::List=>"list",Command::Stats=>"stats"},"frequent":options.frequent,"copy_path":options.copy_path}),
     );
     match options.command {
         Command::RecordJumpFailed => {
@@ -122,6 +125,7 @@ fn run_cli() -> ExitCode {
         }
         Command::Update => run_update(options.color),
         Command::Config => run_config(options),
+        Command::Scan => run_scan(options),
         Command::RecordJump => run_record_jump(options),
         Command::Jump => run_jump(options),
         Command::List => run_list(options),
@@ -284,7 +288,7 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
         }
     }
 
-    let navigation = match projects_for_jump() {
+    let navigation = match projects_for_jump(options.scope) {
         Ok(projects) => projects,
         Err(message) => return fail(&message, options.color),
     };
@@ -295,13 +299,12 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
         config_source,
     } = navigation;
 
-    if projects.is_empty()
-        && (options.frequent || configured_groups.as_ref().is_none_or(Vec::is_empty))
-    {
+    if projects.is_empty() && configured_groups.as_ref().is_none_or(Vec::is_empty) {
         if let Some(config_source) = config_source {
             return fail(
                 &format!(
-                    "No configured projects found in {}; edit section items.",
+                    "No available {} projects in {}; edit section items.",
+                    options.scope.name(),
                     config_source.display()
                 ),
                 options.color,
@@ -318,7 +321,12 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
         };
         let mut destinations = projects;
         if let Some(sectors) = &configured_groups {
-            destinations.extend(sectors.iter().map(|sector| sector.root.clone()));
+            destinations.extend(
+                sectors
+                    .iter()
+                    .filter(|sector| sector.jump_root)
+                    .map(|sector| sector.root.clone()),
+            );
         }
         destinations.sort();
         destinations.dedup();
@@ -328,7 +336,7 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
             return choose_frequent_target(&ranked, &target, options.copy_path, options.color);
         }
 
-        render_frequent(&root, &ranked, options.color);
+        render_frequent(&root, &ranked, options.scope, options.color);
         return if interactive {
             prompt_loop(&options, |input| frequent_path_for_target(&ranked, input))
         } else {
@@ -342,7 +350,7 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
         return choose_target(&sectors, &target, options.copy_path, options.color);
     }
 
-    render(&sectors, options.color);
+    render(&sectors, options.scope, options.color);
     if interactive {
         prompt_loop(&options, |input| {
             let choice = parse_choice(input).map_err(|error| error.message())?;
@@ -369,10 +377,17 @@ fn run_record_jump(options: Options) -> ExitCode {
     if !project.join(".git").exists() {
         let configured_root = load_project_config(&config_path(&home))
             .map(|config| {
-                config
-                    .sections
-                    .iter()
-                    .any(|section| section.root == project)
+                if config.version == SCOPED_CONFIG_VERSION {
+                    config
+                        .sections
+                        .iter()
+                        .any(|section| section.jump_root && section.root == project)
+                } else {
+                    config
+                        .sections
+                        .iter()
+                        .any(|section| section.root == project)
+                }
             })
             .unwrap_or(false);
         if !configured_root {
@@ -452,6 +467,14 @@ fn discover_config_projects(
 }
 
 fn run_config(options: Options) -> ExitCode {
+    run_discovery(options, false)
+}
+
+fn run_scan(options: Options) -> ExitCode {
+    run_discovery(options, true)
+}
+
+fn run_discovery(options: Options, report_only: bool) -> ExitCode {
     let home = match home_dir() {
         Ok(home) => home,
         Err(message) => return fail(&message, options.color),
@@ -462,6 +485,24 @@ fn run_config(options: Options) -> ExitCode {
         Ok(existing) => existing,
         Err(message) => return fail(&message, options.color),
     };
+    if !report_only
+        && existing
+            .as_ref()
+            .is_some_and(|config| config.version == SCOPED_CONFIG_VERSION)
+    {
+        if options.root.is_some() {
+            return fail(
+                "Use hop scan --root to inspect a directory with a scoped config.",
+                options.color,
+            );
+        }
+        eprintln!(
+            "Edit {} to change scopes. Run hop scan to find candidates.",
+            path.display()
+        );
+        return ExitCode::SUCCESS;
+    }
+
     let scan_all_drives = options.root.is_none()
         && existing.as_ref().map_or(cfg!(windows), |config| {
             config.scan_all_drives || (cfg!(windows) && config.scan_root.is_none())
@@ -483,12 +524,22 @@ fn run_config(options: Options) -> ExitCode {
     } else {
         vec![root.clone()]
     };
-    let projects = match discover_config_projects(&roots, options.color, scan_all_drives) {
+    let result = if report_only {
+        scan_with_progress(&roots)
+    } else {
+        discover_config_projects(&roots, options.color, scan_all_drives)
+    };
+    let projects = match result {
         Ok(projects) => projects,
         Err(error) => {
             return fail(&format!("Cannot scan projects: {error}"), options.color);
         }
     };
+
+    if report_only {
+        print_scan_report(existing.as_ref(), &roots, &projects);
+        return ExitCode::SUCCESS;
+    }
 
     let previous_count = existing
         .as_ref()
@@ -536,16 +587,153 @@ fn run_config(options: Options) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn projects_for_jump() -> Result<NavigationProjects, String> {
+fn scan_with_progress(roots: &[PathBuf]) -> io::Result<Vec<PathBuf>> {
+    use std::collections::BTreeSet;
+    use std::time::Duration;
+
+    let terminal = io::stderr().is_terminal();
+    let mut all = BTreeSet::new();
+    for root in roots {
+        eprintln!("Scanning {}", root.display());
+        let mut last_update = Instant::now();
+        let mut frame = 0;
+        let mut counts = (0, 0);
+        let result = discover_projects_with_progress(root, |visited, repositories| {
+            counts = (visited, repositories);
+            if terminal && last_update.elapsed() >= Duration::from_millis(100) {
+                let bar = format!("{}#{}", " ".repeat(frame), " ".repeat(15 - frame));
+                eprint!("\r[{bar}] {visited} directories, {repositories} repositories");
+                let _ = io::stderr().flush();
+                frame = (frame + 1) % 16;
+                last_update = Instant::now();
+            }
+        });
+        let (visited, repositories) = counts;
+        if terminal {
+            eprint!("\r");
+        }
+        eprintln!(
+            "[{}] {visited} directories, {repositories} repositories",
+            if result.is_ok() {
+                "################"
+            } else {
+                "scan failed     "
+            }
+        );
+        all.extend(result.map_err(|error| {
+            io::Error::new(error.kind(), format!("{}: {error}", root.display()))
+        })?);
+    }
+    Ok(all.into_iter().collect())
+}
+
+fn print_scan_report(config: Option<&ProjectConfig>, roots: &[PathBuf], projects: &[PathBuf]) {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let identity = |path: &Path| {
+        for parent in path.ancestors() {
+            if let Ok(resolved) = fs::canonicalize(parent) {
+                return resolved.join(path.strip_prefix(parent).expect("path ancestor"));
+            }
+        }
+        path.to_path_buf()
+    };
+
+    let registered: BTreeSet<_> = config.map_or_else(BTreeSet::new, |config| {
+        if config.version == SCOPED_CONFIG_VERSION {
+            config
+                .sections
+                .iter()
+                .flat_map(section_destinations)
+                .collect()
+        } else {
+            configured_project_paths(config).into_iter().collect()
+        }
+    });
+    let jump_roots: BTreeSet<_> = config
+        .into_iter()
+        .flat_map(|config| &config.sections)
+        .filter(|section| section.jump_root)
+        .map(|section| &section.root)
+        .collect();
+    let scan_roots = roots.iter().map(|root| identity(root)).collect::<Vec<_>>();
+    let mut missing = 0;
+    for path in &registered {
+        let available = if jump_roots.contains(path) {
+            path.is_dir()
+        } else {
+            path.join(".git").exists()
+        };
+        if !available
+            && scan_roots
+                .iter()
+                .any(|root| identity(path).starts_with(root))
+        {
+            eprintln!("Unavailable: {}", path.display());
+            missing += 1;
+        }
+    }
+    let registered_by_identity: BTreeMap<_, _> = registered
+        .iter()
+        .map(|path| (identity(path), path))
+        .collect();
+    let excluded: BTreeSet<_> = config
+        .into_iter()
+        .flat_map(|config| &config.excluded)
+        .map(|path| identity(path))
+        .collect();
+    let mut candidates = 0;
+    for project in projects {
+        let project_identity = identity(project);
+        if excluded.contains(&project_identity)
+            || registered_by_identity.contains_key(&project_identity)
+        {
+            continue;
+        }
+        if let Some(owner) = project_identity
+            .ancestors()
+            .skip(1)
+            .find_map(|ancestor| registered_by_identity.get(ancestor))
+        {
+            eprintln!("Inside {}: {}", owner.display(), project.display());
+        } else {
+            eprintln!("Candidate: {}", project.display());
+            candidates += 1;
+        }
+    }
+    eprintln!(
+        "Found {} repositories, {candidates} candidates, {missing} unavailable destinations. Configuration unchanged.",
+        projects.len()
+    );
+}
+
+fn projects_for_jump(scope: Scope) -> Result<NavigationProjects, String> {
     let home = home_dir()?;
     let path = config_path(&home);
     if path.exists() {
-        let config = load_project_config(&path)
+        let mut config = load_project_config(&path)
             .map_err(|error| format!("Cannot read {}: {error}", path.display()))?;
+        if config.version == SCOPED_CONFIG_VERSION {
+            config.sections.retain(|section| section.scope == scope);
+        } else if scope == Scope::Work {
+            return Err(format!(
+                "Work requires a version 5 config at {}.",
+                path.display()
+            ));
+        }
         let sectors = (config.version >= 4).then(|| configured_sectors(&home, &config));
+        let projects = sectors.as_ref().map_or_else(
+            || active_project_paths(&config),
+            |sectors| {
+                sectors
+                    .iter()
+                    .flat_map(|sector| sector.paths.iter().cloned())
+                    .collect()
+            },
+        );
         return Ok(NavigationProjects {
             root: home,
-            projects: active_project_paths(&config),
+            projects,
             sectors,
             config_source: Some(path),
         });
@@ -713,7 +901,10 @@ fn path_for_choice(
         return Err("No such sector");
     };
     let Some(project_index) = choice.project_index else {
-        return Ok(&sector.root);
+        return sector
+            .jump_root
+            .then_some(sector.root.as_path())
+            .ok_or("No jump configured for this section root");
     };
     let Some(path) = sector.paths.get(project_index) else {
         return Err("No such project");
@@ -1043,6 +1234,7 @@ fn set_shell_init_permissions(_path: &Path) -> io::Result<()> {
 
 fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
     let mut command = Command::Jump;
+    let mut scope = None;
     let mut root = None;
     let mut target = None;
     let mut copy_path = false;
@@ -1084,6 +1276,19 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
                 root = Some(PathBuf::from(value));
             }
             _ if arg.starts_with('-') => return Err(format!("unknown argument: {arg}")),
+            "personal" | "work"
+                if target.is_none() && matches!(command, Command::Jump | Command::List) =>
+            {
+                if scope.is_some() {
+                    return Err("Choose one scope: personal or work".to_owned());
+                }
+                scope = Some(if arg == "work" {
+                    Scope::Work
+                } else {
+                    Scope::Personal
+                });
+            }
+            "scan" if target.is_none() && command == Command::Jump => command = Command::Scan,
             "config" if target.is_none() => {
                 if command != Command::Jump {
                     return Err(format!("unexpected argument: {arg}"));
@@ -1113,6 +1318,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
                     command,
                     Command::List
                         | Command::Stats
+                        | Command::Scan
                         | Command::Update
                         | Command::Config
                         | Command::RecordJump
@@ -1131,12 +1337,19 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
         return Err("hop stats accepts only --no-color".to_owned());
     }
 
-    if root.is_some() && command != Command::Config {
-        return Err("--root is only supported by `hop config --root <dir>`".to_owned());
+    if command == Command::Scan && (copy_path || frequent) {
+        return Err("hop scan accepts --root and --no-color".to_owned());
+    }
+    if scope.is_some() && !matches!(command, Command::Jump | Command::List | Command::Help) {
+        return Err("Scopes apply to navigation and list only".to_owned());
+    }
+    if root.is_some() && !matches!(command, Command::Config | Command::Scan) {
+        return Err("--root is only supported by `hop scan --root <dir>` and legacy `hop config --root <dir>`".to_owned());
     }
 
     Ok(Options {
         command,
+        scope: scope.unwrap_or_default(),
         root,
         target,
         copy_path,
@@ -1145,7 +1358,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
     })
 }
 
-fn render(sectors: &[Sector], color: bool) {
+fn render(sectors: &[Sector], scope: Scope, color: bool) {
     eprintln!();
     eprintln!(
         "  {} {} {}",
@@ -1157,7 +1370,7 @@ fn render(sectors: &[Sector], color: bool) {
     eprintln!(
         "  {} {} {}",
         paint(color, DIM, "--------------"),
-        paint(color, BLUE, "Projects"),
+        paint(color, BLUE, &format!("Projects ({})", scope.name())),
         paint(color, DIM, "--------------"),
     );
 
@@ -1190,7 +1403,7 @@ fn render(sectors: &[Sector], color: bool) {
     eprintln!();
 }
 
-fn render_frequent(scan_root: &Path, projects: &[RankedProject], color: bool) {
+fn render_frequent(scan_root: &Path, projects: &[RankedProject], scope: Scope, color: bool) {
     eprintln!();
     eprintln!(
         "  {} {} {}",
@@ -1202,7 +1415,11 @@ fn render_frequent(scan_root: &Path, projects: &[RankedProject], color: bool) {
     eprintln!(
         "  {} {} {}",
         paint(color, DIM, "-----------"),
-        paint(color, BLUE, "Frequent projects"),
+        paint(
+            color,
+            BLUE,
+            &format!("Frequent projects ({})", scope.name())
+        ),
         paint(color, DIM, "-----------"),
     );
     eprintln!();
@@ -1373,8 +1590,9 @@ fn print_help(color: bool) {
 Tiny interactive project navigator for shells on local machines, VMs, and VPS hosts.
 
 {}:
-    hop [<target>] [--copy-path] [--frequent] [--no-color]
-    hop list [--frequent] [--no-color]
+    hop [personal|work] [<target>] [--copy-path] [--frequent] [--no-color]
+    hop list [personal|work] [--frequent] [--no-color]
+    hop scan [--root <dir>]
     hop stats [--no-color]
     hop ~
     hop config [--root <dir>]
@@ -1383,6 +1601,8 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 
 {}:
     list             Print the project list without prompting for a selection
+    personal, work   Select a saved scope (default personal)
+    scan             Find repositories and report candidates
     stats            Show local jump counts and interactive search times
     config           Create or refresh the project config
     update           Update this executable from the latest GitHub release
@@ -1390,7 +1610,7 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 {}:
     --copy-path      Copy the selected path instead of printing it
     --frequent       Rank all projects by successful jump count
-    --root <dir>      Set the scan directory for hop config
+    --root <dir>      Set the directory for hop scan or legacy config
     --no-color        Disable ANSI color output
     -v, -V, --version Print version
     -h, --help        Print help

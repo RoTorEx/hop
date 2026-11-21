@@ -8,23 +8,21 @@ change to its shell integration.
 ## Actors and concepts
 
 - The user owns the project configuration and all locally recorded jump data.
-- A project is a discovered directory containing `.git`.
-- A configured project is listed in a section's `items` array; an `excluded`
-  project stays hidden when the config is refreshed.
-- A sector is a section rooted at a project parent directory. Its implicit `0` selector opens that root even when it has no Git repository.
+- Discovery finds candidate Git repositories by their `.git` metadata.
+- Users assign saved destinations to flat sections in Personal or Work. Each
+  section can register relative items and optionally its root via selector `0`.
 - A successful jump is a directory change completed by the installed shell
   integration, not merely a selection or copied path.
 
 ## Core flows and invariants
 
-- `hop config` generates, migrates, or refreshes the project list. Refreshing
-  adds discovered Git projects grouped by their immediate parent directories while preserving configured paths;
-  explicit `excluded` paths remain hidden. On Windows, its default scope is
-  every ready local fixed disk so users do not need to specify drive letters.
-  Linux/macOS default to the user home; `--root` explicitly limits either platform.
-- Recursive discovery runs only on `hop config`, for every scan scope; normal
-  navigation uses the saved list and checks known project availability to keep
-  startup fast. `--root` is supported only by `hop config`.
+- Personal is the default scope. `hop personal` and `hop work` select saved
+  sections explicitly. Navigation checks registered paths without recursive discovery.
+- A destination has one section. A registered root or item and its descendants
+  belong to the same section. Container folders may organize groups on disk.
+- `hop scan` shows progress and reports candidates without assigning them to
+  sections or replacing configured paths. `hop config` retains the legacy
+  bootstrap and refresh workflow for version 1–4 configs.
 - The default view sorts sections by full root path and their items by relative path, and addresses them with
   selectors such as `A1`.
 - The frequent view globally ranks configured projects and section roots by successful jump
