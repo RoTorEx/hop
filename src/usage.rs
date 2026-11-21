@@ -2,6 +2,7 @@
 use fs2::FileExt;
 use serde_json::{Value, json};
 use std::{
+    collections::BTreeMap,
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
@@ -227,6 +228,89 @@ fn remove(path: &Path) -> io::Result<()> {
         result => result,
     }
 }
+fn lock_exclusive(lock: &File) -> io::Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        match lock.try_lock_exclusive() {
+            Ok(()) => return Ok(()),
+            Err(e)
+                if e.raw_os_error() == fs2::lock_contended_error().raw_os_error()
+                    && Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(2))
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+pub fn record_search(mode: &str, result: &str, duration: Duration) {
+    emit(
+        "project_search",
+        result,
+        json!({"mode": mode}),
+        None,
+        Some(duration.as_millis()),
+    );
+}
+
+type SearchSummary = BTreeMap<(&'static str, &'static str), (u64, u128)>;
+
+pub fn search_summary() -> io::Result<SearchSummary> {
+    let mut summary = BTreeMap::new();
+    let Some(logger) = LOGGER.get() else {
+        return Ok(summary);
+    };
+    let path = &logger.path;
+    let lock_path = path.with_extension("lock");
+    regular(&lock_path)?;
+    let lock = match File::open(lock_path) {
+        Ok(lock) => lock,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(summary),
+        Err(error) => return Err(error),
+    };
+    FileExt::lock_shared(&lock)?;
+
+    let cutoff = seconds().saturating_sub(RETENTION_SECONDS);
+    for index in 0..SEGMENTS {
+        let current = segment(path, index);
+        regular(&current)?;
+        let contents = match fs::read_to_string(current) {
+            Ok(contents) => contents,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        for event in contents
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        {
+            if event["action"] != "project_search"
+                || event["epoch_seconds"]
+                    .as_u64()
+                    .is_none_or(|time| time < cutoff)
+            {
+                continue;
+            }
+            let mode = match event["fields"]["mode"].as_str() {
+                Some("default") => "default",
+                Some("frequent") => "frequent",
+                _ => continue,
+            };
+            let result = match event["result"].as_str() {
+                Some("selected") => "selected",
+                Some("canceled") => "canceled",
+                _ => continue,
+            };
+            if let Some(duration_ms) = event["duration_ms"].as_u64() {
+                let (count, total_ms) = summary.entry((mode, result)).or_default();
+                *count += 1;
+                *total_ms += u128::from(duration_ms);
+            }
+        }
+    }
+    Ok(summary)
+}
+
 fn append(
     path: &Path,
     line: &[u8],
@@ -252,19 +336,7 @@ fn append(
     }
     // A separate inode survives renames; the OS releases its lock after a crash.
     let lock = private_open(&path.with_extension("lock"), false)?;
-    let deadline = Instant::now() + Duration::from_secs(1);
-    loop {
-        match lock.try_lock_exclusive() {
-            Ok(()) => break,
-            Err(e)
-                if e.raw_os_error() == fs2::lock_contended_error().raw_os_error()
-                    && Instant::now() < deadline =>
-            {
-                std::thread::sleep(Duration::from_millis(2))
-            }
-            Err(e) => return Err(e),
-        }
-    }
+    lock_exclusive(&lock)?;
     for index in 0..count {
         regular(&segment(path, index))?;
     }

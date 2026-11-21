@@ -94,6 +94,19 @@ the ranking. If configured and present again, their prior count applies.
 The shell bridge records the exact path emitted by Hop. History is not
 canonicalized or merged across symlinked or differently spelled paths.
 
+## Usage statistics
+
+`hop stats` reports the total and per-destination counts from jump history,
+including previously visited paths absent from the current configuration or
+filesystem. Concurrent shell jumps serialize history updates.
+
+Interactive search time measures the interval from the first selection prompt to
+a valid selection or cancellation. Invalid selections keep the same timer
+running. Default and frequent views are reported separately, as are valid
+selections and cancellations. Direct selectors, piped input and copy mode are
+excluded. A valid selection can be timed even if the shell never completes the
+jump. `hop stats` shows the sample count and mean duration for retained events.
+
 ## Protecting tests
 
 - `src/lib.rs`: history round-trip, increment behavior, saturating counters,

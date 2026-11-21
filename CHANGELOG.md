@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+- Add `hop stats` for total jumps, counts by destination, and local interactive search times by view and outcome.
+
 ## [0.3.20] - 2026-11-03
 
 - Limit recursive discovery to `hop config` so normal navigation, list, help,

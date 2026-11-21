@@ -222,6 +222,20 @@ pub fn write_jump_history(path: &Path, history: &JumpHistory) -> io::Result<()> 
 }
 
 pub fn record_jump(path: &Path, project_path: &Path) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    // Keep the lock inode separate from the history file, which writes replace.
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let lock = options.open(path.with_extension("lock"))?;
+    fs2::FileExt::lock_exclusive(&lock)?;
+
     let mut history = match load_jump_history(path) {
         Ok(history) => history,
         Err(error) if error.kind() == io::ErrorKind::NotFound => JumpHistory::default(),

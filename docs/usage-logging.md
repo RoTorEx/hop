@@ -18,7 +18,11 @@ inactive tools cannot grow but may retain old files until next use. Rotation is
 serialized across writers. A normal usage-log failure is reported once and does
 not change the action's result. Never treat an incomplete run as a successful
 operation or infer zero usage from missing logging coverage. Duration measures
-elapsed work, not time saved.
+elapsed work, not time saved. Interactive jump searches emit a `project_search`
+event with `duration_ms`, a `default` or `frequent` mode, and a `selected` or
+`canceled` result. The timer covers the prompt and any selection retries.
+`hop stats` summarizes these events across the retained segments. Destination
+paths and lifetime counts come from jump history.
 
 Product logs are distinct from business state, cost ledgers and recovery evidence.
 Never apply this retention policy to source files, recordings, queues, retry state,

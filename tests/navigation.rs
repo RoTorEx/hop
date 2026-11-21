@@ -87,3 +87,68 @@ fn navigation_cannot_request_a_recursive_scan() {
         );
     }
 }
+
+#[test]
+fn stats_use_recorded_jumps_and_retained_search_events() {
+    let workspace = Workspace::new();
+    let stats = || workspace.run(&["stats", "--no-color"]);
+    let empty = stats();
+    assert!(empty.status.success());
+    assert!(String::from_utf8_lossy(&empty.stderr).contains("Total successful jumps: 0"));
+
+    let destination = workspace.0.join("project");
+    fs::create_dir_all(destination.join(".git")).unwrap();
+    std::thread::scope(|scope| {
+        for _ in 0..8 {
+            scope.spawn(|| {
+                let output = workspace.run(&["--record-jump", destination.to_str().unwrap()]);
+                assert!(output.status.success(), "{output:?}");
+            });
+        }
+    });
+    // History remains visible after a project disappears.
+    fs::remove_dir_all(&destination).unwrap();
+
+    let logs = workspace.0.join(".toolbelt/hop/logs");
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let search = |mode, result, duration, epoch_seconds| {
+        serde_json::json!({
+            "action": "project_search",
+            "result": result,
+            "fields": {"mode": mode},
+            "duration_ms": duration,
+            "epoch_seconds": epoch_seconds,
+        })
+    };
+    fs::write(
+        logs.join("events.jsonl.1"),
+        format!(
+            "{}\n{}\n{}\n",
+            search("default", "selected", 500, now),
+            search("default", "selected", 20_000, now - 91 * 86400),
+            search("frequent", "canceled", 1500, now),
+        ),
+    )
+    .unwrap();
+
+    let output = stats();
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stdout.is_empty());
+    let report = String::from_utf8(output.stderr).unwrap();
+    assert!(report.contains("Total successful jumps: 8"), "{report}");
+    assert!(
+        report.contains(&format!("8  {}", destination.display())),
+        "{report}"
+    );
+    assert!(
+        report.contains("default, selected: 1 searches, 0.50 s average"),
+        "{report}"
+    );
+    assert!(
+        report.contains("frequent, canceled: 1 searches, 1.50 s average"),
+        "{report}"
+    );
+}

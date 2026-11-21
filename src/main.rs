@@ -6,16 +6,17 @@ use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode, Stdio};
+use std::time::Instant;
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
 use hop::{
-    APP_NAME, ChoiceParseError, JumpHistory, ProjectConfig, RankedProject, Sector,
-    active_project_paths, cli_home_path, config_path, configured_project_paths, configured_sectors,
-    discover_projects, group_projects, history_path, load_jump_history, load_project_config,
-    merge_project_config, parse_choice, rank_projects_by_jumps, record_jump,
-    refresh_project_config, write_project_config,
+    APP_NAME, JumpHistory, ProjectConfig, RankedProject, Sector, active_project_paths,
+    cli_home_path, config_path, configured_project_paths, configured_sectors, discover_projects,
+    group_projects, history_path, load_jump_history, load_project_config, merge_project_config,
+    parse_choice, rank_projects_by_jumps, record_jump, refresh_project_config,
+    write_project_config,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -36,6 +37,7 @@ const GRAY: &str = "\x1b[90m";
 enum Command {
     Jump,
     List,
+    Stats,
     Help,
     Version,
     ShellInit,
@@ -87,7 +89,7 @@ fn run_cli() -> ExitCode {
     usage::event(
         "command_selected",
         "started",
-        json!({"mode":match options.command {Command::Help=>"help",Command::Version=>"version",Command::ShellInit=>"shell_init",Command::Update=>"update",Command::Config=>"config",Command::RecordJump=>"jump_confirmed",Command::RecordJumpFailed=>"jump_failed",Command::Jump=>"navigate",Command::List=>"list"},"frequent":options.frequent,"copy_path":options.copy_path}),
+        json!({"mode":match options.command {Command::Help=>"help",Command::Version=>"version",Command::ShellInit=>"shell_init",Command::Update=>"update",Command::Config=>"config",Command::RecordJump=>"jump_confirmed",Command::RecordJumpFailed=>"jump_failed",Command::Jump=>"navigate",Command::List=>"list",Command::Stats=>"stats"},"frequent":options.frequent,"copy_path":options.copy_path}),
     );
     match options.command {
         Command::RecordJumpFailed => {
@@ -123,6 +125,7 @@ fn run_cli() -> ExitCode {
         Command::RecordJump => run_record_jump(options),
         Command::Jump => run_jump(options),
         Command::List => run_list(options),
+        Command::Stats => run_stats(options.color),
     }
 }
 
@@ -238,6 +241,40 @@ fn run_list(options: Options) -> ExitCode {
     run_navigation(options, false)
 }
 
+fn run_stats(color: bool) -> ExitCode {
+    let history = match load_optional_jump_history() {
+        Ok(history) => history,
+        Err(message) => return fail(&message, color),
+    };
+    let total: u128 = history
+        .projects
+        .iter()
+        .map(|entry| u128::from(entry.jumps))
+        .sum();
+    let destinations = history
+        .projects
+        .iter()
+        .map(|entry| entry.path.clone())
+        .collect();
+    eprintln!("Total successful jumps: {total}");
+    for entry in rank_projects_by_jumps(destinations, &history) {
+        eprintln!("  {}  {}", entry.jumps, entry.path.display());
+    }
+
+    eprintln!("Interactive search time (retained events, up to 90 days):");
+    match usage::search_summary() {
+        Ok(summary) if summary.is_empty() => eprintln!("  No recorded searches"),
+        Ok(summary) => {
+            for ((mode, result), (count, total_ms)) in summary {
+                let average_seconds = total_ms as f64 / count as f64 / 1000.0;
+                eprintln!("  {mode}, {result}: {count} searches, {average_seconds:.2} s average");
+            }
+        }
+        Err(error) => return fail(&format!("Cannot read search metrics: {error}"), color),
+    }
+    ExitCode::SUCCESS
+}
+
 fn run_navigation(options: Options, interactive: bool) -> ExitCode {
     if let Some(target) = options.target.as_deref() {
         match cli_home_shortcut_path(target) {
@@ -293,7 +330,7 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
 
         render_frequent(&root, &ranked, options.color);
         return if interactive {
-            frequent_prompt_loop(&ranked, options.copy_path, options.color)
+            prompt_loop(&options, |input| frequent_path_for_target(&ranked, input))
         } else {
             ExitCode::SUCCESS
         };
@@ -307,7 +344,10 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
 
     render(&sectors, options.color);
     if interactive {
-        prompt_loop(&sectors, options.copy_path, options.color)
+        prompt_loop(&options, |input| {
+            let choice = parse_choice(input).map_err(|error| error.message())?;
+            path_for_choice(&sectors, choice)
+        })
     } else {
         ExitCode::SUCCESS
     }
@@ -565,49 +605,33 @@ fn cli_home_shortcut_path_for_home(target: &str, home: &Path) -> Option<PathBuf>
     }
 }
 
-fn prompt_loop(sectors: &[Sector], copy_path: bool, color: bool) -> ExitCode {
+fn prompt_loop<'a>(
+    options: &Options,
+    resolve: impl Fn(&str) -> Result<&'a Path, &'static str>,
+) -> ExitCode {
+    let terminal = io::stdin().is_terminal();
+    let start = (terminal && !options.copy_path).then(Instant::now);
+    let (mode, selector) = if options.frequent {
+        ("frequent", "<position>")
+    } else {
+        ("default", "<sector><position>")
+    };
+    let record_search = |result| {
+        if let Some(start) = start {
+            usage::record_search(mode, result, start.elapsed());
+        }
+    };
+
     loop {
         eprint!(
             "  {} {} {}: ",
-            paint(color, BLUE, ">"),
-            paint(color, BOLD, if copy_path { "copy" } else { "jump to" }),
-            paint(color, DIM, "<sector><position>"),
-        );
-        if io::stderr().flush().is_err() {
-            return ExitCode::from(1);
-        }
-
-        let input = match read_choice() {
-            Ok(input) => input,
-            Err(_) => return ExitCode::from(1),
-        };
-
-        let choice = match parse_choice(&input) {
-            Ok(choice) => choice,
-            Err(ChoiceParseError::Empty) => {
-                usage::event("project_selection", "canceled", json!({}));
-                return ExitCode::from(1);
-            }
-            Err(error) => {
-                warn(error.message(), color);
-                continue;
-            }
-        };
-
-        match path_for_choice(sectors, choice) {
-            Ok(path) => return emit_path(path, copy_path, color),
-            Err(message) => warn(message, color),
-        }
-    }
-}
-
-fn frequent_prompt_loop(projects: &[RankedProject], copy_path: bool, color: bool) -> ExitCode {
-    loop {
-        eprint!(
-            "  {} {} {}: ",
-            paint(color, BLUE, ">"),
-            paint(color, BOLD, if copy_path { "copy" } else { "jump to" }),
-            paint(color, DIM, "<position>"),
+            paint(options.color, BLUE, ">"),
+            paint(
+                options.color,
+                BOLD,
+                if options.copy_path { "copy" } else { "jump to" }
+            ),
+            paint(options.color, DIM, selector),
         );
         if io::stderr().flush().is_err() {
             return ExitCode::from(1);
@@ -618,13 +642,17 @@ fn frequent_prompt_loop(projects: &[RankedProject], copy_path: bool, color: bool
             Err(_) => return ExitCode::from(1),
         };
         if input.is_empty() {
-            usage::event("project_selection", "canceled", json!({"mode":"frequent"}));
+            record_search("canceled");
+            usage::event("project_selection", "canceled", json!({"mode": mode}));
             return ExitCode::from(1);
         }
 
-        match frequent_path_for_target(projects, &input) {
-            Ok(path) => return emit_path(path, copy_path, color),
-            Err(message) => warn(message, color),
+        match resolve(&input) {
+            Ok(path) => {
+                record_search("selected");
+                return emit_path(path, options.copy_path, options.color);
+            }
+            Err(message) => warn(message, options.color),
         }
     }
 }
@@ -1068,6 +1096,12 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
                 }
                 command = Command::List;
             }
+            "stats" if target.is_none() => {
+                if command != Command::Jump {
+                    return Err(format!("unexpected argument: {arg}"));
+                }
+                command = Command::Stats;
+            }
             "update" if target.is_none() => {
                 if command != Command::Jump {
                     return Err(format!("unexpected argument: {arg}"));
@@ -1077,7 +1111,11 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
             _ => {
                 if matches!(
                     command,
-                    Command::List | Command::Update | Command::Config | Command::RecordJump
+                    Command::List
+                        | Command::Stats
+                        | Command::Update
+                        | Command::Config
+                        | Command::RecordJump
                 ) {
                     return Err(format!("unexpected argument: {arg}"));
                 }
@@ -1087,6 +1125,10 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
                 target = Some(arg);
             }
         }
+    }
+
+    if command == Command::Stats && (copy_path || frequent) {
+        return Err("hop stats accepts only --no-color".to_owned());
     }
 
     if root.is_some() && command != Command::Config {
@@ -1333,6 +1375,7 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 {}:
     hop [<target>] [--copy-path] [--frequent] [--no-color]
     hop list [--frequent] [--no-color]
+    hop stats [--no-color]
     hop ~
     hop config [--root <dir>]
     hop update
@@ -1340,6 +1383,7 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 
 {}:
     list             Print the project list without prompting for a selection
+    stats            Show local jump counts and interactive search times
     config           Create or refresh the project config
     update           Update this executable from the latest GitHub release
 

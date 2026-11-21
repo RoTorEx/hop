@@ -146,6 +146,7 @@ hop A1
 hop --copy-path A1
 hop list
 hop list --frequent
+hop stats
 hop --frequent
 hop --frequent 1
 hop update
@@ -173,7 +174,12 @@ count.
 
 Jump counts are kept locally in `~/.toolbelt/hop/history.toml`, separately from
 the manually editable project config. The installed shell bridge records a jump
-only after it changes directory successfully.
+only after it changes directory successfully. `hop stats` prints the total and
+per-destination counts, including past destinations that are no longer available.
+It also shows average interactive search time and sample counts by view and
+outcome for the retained local log. Search time runs from the selection prompt
+to a valid selection or cancellation, including time spent on invalid attempts.
+Direct selectors, piped input, and copy mode are excluded.
 
 `hop config` scans `$HOME` on Linux/macOS or all ready local fixed disks on
 Windows and creates `~/.toolbelt/hop/config.toml`. It also migrates version 1–3
