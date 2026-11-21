@@ -1261,6 +1261,16 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
                 target = Some(value);
             }
             "--no-color" => color = false,
+            "--scope" => {
+                if scope.is_some() {
+                    return Err("--scope can be specified only once".to_owned());
+                }
+                scope = Some(match args.next().as_deref() {
+                    Some("personal") => Scope::Personal,
+                    Some("work") => Scope::Work,
+                    _ => return Err("--scope requires personal or work".to_owned()),
+                });
+            }
             "--root" => {
                 let Some(value) = args.next() else {
                     return Err("--root requires a directory".to_owned());
@@ -1276,18 +1286,6 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
                 root = Some(PathBuf::from(value));
             }
             _ if arg.starts_with('-') => return Err(format!("unknown argument: {arg}")),
-            "personal" | "work"
-                if target.is_none() && matches!(command, Command::Jump | Command::List) =>
-            {
-                if scope.is_some() {
-                    return Err("Choose one scope: personal or work".to_owned());
-                }
-                scope = Some(if arg == "work" {
-                    Scope::Work
-                } else {
-                    Scope::Personal
-                });
-            }
             "scan" if target.is_none() && command == Command::Jump => command = Command::Scan,
             "config" if target.is_none() => {
                 if command != Command::Jump {
@@ -1341,7 +1339,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
         return Err("hop scan accepts --root and --no-color".to_owned());
     }
     if scope.is_some() && !matches!(command, Command::Jump | Command::List | Command::Help) {
-        return Err("Scopes apply to navigation and list only".to_owned());
+        return Err("--scope is only supported for jumps and hop list".to_owned());
     }
     if root.is_some() && !matches!(command, Command::Config | Command::Scan) {
         return Err("--root is only supported by `hop scan --root <dir>` and legacy `hop config --root <dir>`".to_owned());
@@ -1590,8 +1588,8 @@ fn print_help(color: bool) {
 Tiny interactive project navigator for shells on local machines, VMs, and VPS hosts.
 
 {}:
-    hop [personal|work] [<target>] [--copy-path] [--frequent] [--no-color]
-    hop list [personal|work] [--frequent] [--no-color]
+    hop [<target>] [--copy-path] [--frequent] [--no-color] [--scope <scope>]
+    hop list [--frequent] [--no-color] [--scope <scope>]
     hop scan [--root <dir>]
     hop stats [--no-color]
     hop ~
@@ -1601,16 +1599,16 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
 
 {}:
     list             Print the project list without prompting for a selection
-    personal, work   Select a saved scope (default personal)
-    scan             Find repositories and report candidates
+    scan             Find Git repositories and report differences without changing config
     stats            Show local jump counts and interactive search times
-    config           Create or refresh the project config
+    config           Locate and validate a scoped config, or refresh a legacy config
     update           Update this executable from the latest GitHub release
 
 {}:
     --copy-path      Copy the selected path instead of printing it
     --frequent       Rank all projects by successful jump count
     --root <dir>      Set the directory for hop scan or legacy config
+    --scope <scope>  Select personal (default) or work for jumps and list
     --no-color        Disable ANSI color output
     -v, -V, --version Print version
     -h, --help        Print help

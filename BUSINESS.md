@@ -16,8 +16,8 @@ change to its shell integration.
 
 ## Core flows and invariants
 
-- Personal is the default scope. `hop personal` and `hop work` select saved
-  sections explicitly. Navigation checks registered paths without recursive discovery.
+- Personal is the default scope. Jumps and lists accept `--scope personal`
+  or `--scope work` to select saved sections explicitly. Navigation checks registered paths without recursive discovery.
 - A destination has one section. A registered root or item and its descendants
   belong to the same section. Container folders may organize groups on disk.
 - `hop scan` shows progress and reports candidates without assigning them to

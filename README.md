@@ -140,8 +140,9 @@ cargo build --release --locked
 ```bash
 hop --help
 hop ~
-hop personal
-hop work
+hop --scope work
+hop A1 --scope work
+hop list --scope work
 hop scan
 hop config
 hop -v
@@ -184,8 +185,9 @@ outcome for the retained local log. Search time runs from the selection prompt
 to a valid selection or cancellation, including time spent on invalid attempts.
 Direct selectors, piped input, and copy mode are excluded.
 
-Hop defaults to Personal, regardless of the current directory. Use `hop work`
-for Work, `hop work A1` for a direct jump, and `hop list work` to preview.
+Hop defaults to Personal, regardless of the current directory. Use
+`hop --scope work` to choose a Work destination, `hop A1 --scope work` to jump
+directly, and `hop list --scope work` to preview the view.
 Selectors and the frequent view use only the selected scope. Navigation loads
 the saved config and checks registered paths without recursively scanning.
 
@@ -222,21 +224,34 @@ rejects duplicate destinations and parent/child destinations assigned to
 different sections. An ordinary section root can contain other section roots
 on disk because users jump only to its listed items.
 
-Run `hop scan` for a progress display and a report of new candidates, discovered
-repositories inside registered destinations, and unavailable destinations in
-the scanned area. It uses the saved scan root, the home directory on Linux and
-macOS when no scope is saved, or ready local fixed drives on Windows. Use
-`hop scan --root <dir>` to choose a directory explicitly. The scan leaves
-registration to the user and respects absolute paths in the top-level
-`excluded` list.
+### Register or move a project
 
-`hop config` points to the editable configuration for version 5. With a missing
-config or a version 1–4 config, it retains the legacy bootstrap and refresh
-workflow and groups discovered repositories by immediate parent. To migrate an
-existing config, back it up, change `version` to `5`, mark the work sections,
-and consolidate any destinations that overlap. Add `jump_root = true` only
-where a group root should be a destination. Verify with `hop list personal`
-and `hop list work`. Use a build that supports version 5 with the new file.
+1. Open `~/.toolbelt/hop/config.toml`. For a version 5 file, `hop config` verifies
+   it and prints its location.
+2. Add a repository path relative to the chosen section's `root` in its
+   `items`. To register a separate project group, add one section with its
+   root, scope, and any component paths. If a destination moves between
+   sections, move its registration in the same edit. If a whole group moves
+   together, change its `root` and keep the relative items.
+3. Run `hop list` or `hop list --scope work` to verify the destination and its
+   selector. Selectors are positions in the active view.
+
+`hop scan` is optional for finding unregistered checkouts and unavailable
+entries, for example after moving several repositories. It compares Git
+repositories under a filesystem root against both scopes, reports the
+differences, and leaves the config unchanged. Git metadata can show that a
+checkout exists and where it lives. The user chooses where it belongs.
+Use `hop scan --root <dir>` to narrow the walk. Otherwise it uses the saved scan
+root, the home directory on Linux and macOS when no root is saved, or ready
+local fixed drives on Windows. The report respects the top-level `excluded`
+list of absolute paths.
+
+With a missing config or a version 1–4 config, `hop config` retains the
+legacy bootstrap and refresh workflow and groups repositories by immediate
+parent. For manual configuration, create or edit the file with `version = 5`
+as shown above. When migrating existing sections, mark the Work sections and
+consolidate overlapping destinations. Add `jump_root = true` for each group
+root that should be reachable through selector `0`.
 
 Normal `hop` jump mode requires the config file. If it is missing, hop
 prints an alert and exits; run `hop config` first.

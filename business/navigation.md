@@ -3,7 +3,8 @@
 ## Scopes and discovery
 
 Personal and Work are explicit saved scopes. Personal is the default from any
-working directory. Jump, list, and frequent views select from one scope at a time.
+working directory. The `--scope` flag selects one scope for jumps and lists,
+including the frequent view.
 
 A version 5 config records flat sections with a root, relative items, an
 optional `scope = "work"`, and an optional `jump_root = true`. Items are available when they contain `.git`. A section root with
@@ -29,7 +30,7 @@ Discovery finds nested Git repositories.
 
 Version 1–4 configs retain the earlier automatic grouping by immediate parent
 through `hop config` for bootstrap and compatibility. They are read as Personal.
-Version 5 assigns groups explicitly and `hop config` displays the file to edit.
+Version 5 assigns groups explicitly. `hop config` validates the file and displays its path.
 
 ## Default view
 

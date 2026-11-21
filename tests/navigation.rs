@@ -194,7 +194,10 @@ items = ["repo"]
 
     let personal = workspace.run(&["list"]);
     assert!(personal.status.success(), "{personal:?}");
-    assert_eq!(personal.stderr, workspace.run(&["list", "personal"]).stderr);
+    assert_eq!(
+        personal.stderr,
+        workspace.run(&["list", "--scope", "personal"]).stderr
+    );
     let personal = String::from_utf8(personal.stderr).unwrap();
     assert!(personal.contains("Projects (personal)") && personal.contains("services"));
     assert!(
@@ -212,13 +215,40 @@ items = ["repo"]
         );
     };
     selected(&["B0"], "dev-tools/services");
-    selected(&["work", "A0"], "company");
-    selected(&["work", "A1"], "company/repo");
+    selected(&["A0", "--scope", "work"], "company");
+    selected(&["A1", "--scope", "work"], "company/repo");
 
-    let work = workspace.run(&["list", "work", "--frequent"]);
+    let work = workspace.run(&["list", "--frequent", "--scope", "work"]);
     assert!(work.status.success(), "{work:?}");
     let listing = String::from_utf8(work.stderr).unwrap();
     assert!(listing.contains("company") && !listing.contains("dev-tools"));
+
+    for (args, error) in [
+        (
+            &["list", "--scope"][..],
+            "--scope requires personal or work",
+        ),
+        (
+            &["list", "--scope", "unknown"],
+            "--scope requires personal or work",
+        ),
+        (
+            &["list", "--scope", "work", "--scope", "personal"],
+            "--scope can be specified only once",
+        ),
+        (
+            &["scan", "--scope", "work"],
+            "--scope is only supported for jumps and hop list",
+        ),
+        (&["list", "work"], "unexpected argument: work"),
+    ] {
+        let result = workspace.run(args);
+        assert!(!result.status.success());
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains(error),
+            "{result:?}"
+        );
+    }
 
     let scan = workspace.run(&["scan", "--root", "projects"]);
     assert!(scan.status.success() && scan.stdout.is_empty(), "{scan:?}");
@@ -239,7 +269,7 @@ items = ["repo"]
     // Listing both the parent project and an inner section would split ownership.
     let conflict = config.replace(r#"["hop", "departed"]"#, r#"["hop", "services"]"#);
     fs::write(&config_path, conflict).unwrap();
-    let output = workspace.run(&["list", "work"]);
+    let output = workspace.run(&["list", "--scope", "work"]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("duplicate jump destination"));
 
