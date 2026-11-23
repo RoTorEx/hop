@@ -146,7 +146,7 @@ fn stats_use_recorded_jumps_and_retained_search_events() {
     let report = String::from_utf8(output.stderr).unwrap();
     assert!(report.contains("Total successful jumps: 8"), "{report}");
     assert!(
-        report.contains(&format!("8  {}", destination.display())),
+        report.contains(&format!("8  project  {}", destination.display())),
         "{report}"
     );
     assert!(
@@ -234,11 +234,11 @@ items = ["repo"]
     for (args, error) in [
         (
             &["list", "--scope"][..],
-            "--scope requires personal or work",
+            "--scope requires personal, work or archive",
         ),
         (
             &["list", "--scope", "unknown"],
-            "--scope requires personal or work",
+            "--scope requires personal, work or archive",
         ),
         (
             &["list", "--scope", "work", "--scope", "personal"],
@@ -356,4 +356,83 @@ fn routing_files_define_scopes_and_share_validation() {
     let conflict = workspace.run(&["list", "--scope", "work"]);
     assert!(!conflict.status.success());
     assert!(String::from_utf8_lossy(&conflict.stderr).contains("overlap across sections"));
+}
+
+#[test]
+fn archive_scope_is_optional_and_counts_follow_a_moved_destination() {
+    let workspace = Workspace::new();
+    let routing = workspace.0.join(".toolbelt/hop/routing");
+    fs::create_dir_all(&routing).unwrap();
+    let old_group = workspace.0.join("tools");
+    let new_group = workspace.0.join("dev-tools");
+    let archive = workspace.0.join("archive");
+    fs::create_dir_all(old_group.join("hop/.git")).unwrap();
+    fs::create_dir_all(&archive).unwrap();
+    let personal = |root: &std::path::Path| {
+        format!(
+            "version = 5\n[[sections]]\nroot = {}\nitems = [\"hop\"]\n",
+            serde_json::json!(root)
+        )
+    };
+    fs::write(routing.join("personal.toml"), personal(&old_group)).unwrap();
+    fs::write(routing.join("work.toml"), "version = 5\n").unwrap();
+
+    // Routing written before the archive scope existed stays valid.
+    assert!(workspace.run(&["list"]).status.success());
+    let empty = workspace.run(&["list", "--scope", "archive"]);
+    assert!(!empty.status.success());
+    assert!(String::from_utf8_lossy(&empty.stderr).contains("No available archive projects"));
+
+    fs::write(
+        routing.join("archive.toml"),
+        format!(
+            "version = 5\n[[sections]]\nroot = {}\njump_root = true\nitems = []\n",
+            serde_json::json!(archive)
+        ),
+    )
+    .unwrap();
+    let archived = workspace.run(&["A0", "--scope", "archive"]);
+    assert!(archived.status.success(), "{archived:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&archived.stdout).trim(),
+        archive.to_str().unwrap()
+    );
+    let personal_view = workspace.run(&["list"]);
+    assert!(!String::from_utf8_lossy(&personal_view.stderr).contains("archive"));
+
+    let record = |path: &std::path::Path| {
+        let output = workspace.run(&["--record-jump", path.to_str().unwrap()]);
+        assert!(output.status.success(), "{output:?}");
+    };
+    record(&old_group.join("hop"));
+    record(&old_group.join("hop"));
+
+    fs::rename(&old_group, &new_group).unwrap();
+    fs::write(routing.join("personal.toml"), personal(&new_group)).unwrap();
+    record(&new_group.join("hop"));
+
+    // The name resolves to the current path from any scope.
+    let by_name = workspace.run(&["hop", "--scope", "archive"]);
+    assert!(by_name.status.success(), "{by_name:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&by_name.stdout).trim(),
+        new_group.join("hop").to_str().unwrap()
+    );
+    let unknown = workspace.run(&["nothing-here"]);
+    assert!(!unknown.status.success() && unknown.stdout.is_empty());
+
+    let stats = workspace.run(&["stats"]);
+    let report = String::from_utf8_lossy(&stats.stderr);
+    assert!(
+        report.contains(&format!("3  hop  {}", new_group.join("hop").display())),
+        "{report}"
+    );
+    let frequent = workspace.run(&["list", "--frequent"]);
+    assert!(
+        String::from_utf8_lossy(&frequent.stderr).contains("3 jumps"),
+        "{frequent:?}"
+    );
+    let history = fs::read_to_string(workspace.0.join(".toolbelt/hop/history.toml")).unwrap();
+    assert!(history.contains("version = 2"), "{history}");
+    assert_eq!(history.matches("[[projects]]").count(), 1, "{history}");
 }

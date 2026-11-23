@@ -11,7 +11,7 @@ pub const HISTORY_FILE_NAME: &str = "history.toml";
 
 const CONFIG_VERSION: u32 = 4;
 pub const SCOPED_CONFIG_VERSION: u32 = 5;
-const HISTORY_VERSION: u32 = 1;
+const HISTORY_VERSION: u32 = 2;
 
 const SKIP_DIRS: &[&str] = &[
     "construction_side",
@@ -62,14 +62,23 @@ pub enum Scope {
     #[default]
     Personal,
     Work,
+    Archive,
 }
 
 impl Scope {
+    pub const ALL: [Self; 3] = [Self::Personal, Self::Work, Self::Archive];
+
     pub fn name(self) -> &'static str {
         match self {
             Self::Personal => "personal",
             Self::Work => "work",
+            Self::Archive => "archive",
         }
+    }
+
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|scope| scope.name() == name)
     }
 }
 
@@ -102,11 +111,18 @@ impl Default for JumpHistory {
     }
 }
 
+/// One destination's lifetime count. `name` identifies the destination across
+/// moves; `path` is its registered location, or the last known one once the
+/// destination is no longer registered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JumpHistoryEntry {
+    pub name: String,
     pub path: PathBuf,
     pub jumps: u64,
 }
+
+/// Registered destination paths mapped to their history names.
+pub type DestinationNames = BTreeMap<PathBuf, String>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RankedProject {
@@ -222,10 +238,16 @@ pub fn load_routing(
         config.excluded = settings.excluded;
     }
 
-    for scope in [Scope::Personal, Scope::Work] {
+    for scope in Scope::ALL {
         let path = directory.join(format!("{}.toml", scope.name()));
-        let mut routing = load_project_config(&path)
-            .map_err(|error| format!("Cannot read {}: {error}", path.display()))?;
+        let mut routing = match load_project_config(&path) {
+            Ok(routing) => routing,
+            // Archive is optional so routing written for two scopes stays valid.
+            Err(error) if scope == Scope::Archive && error.kind() == io::ErrorKind::NotFound => {
+                continue;
+            }
+            Err(error) => return Err(format!("Cannot read {}: {error}", path.display())),
+        };
         if routing.version != SCOPED_CONFIG_VERSION {
             return Err(format!(
                 "{} requires version = {SCOPED_CONFIG_VERSION}",
@@ -297,7 +319,7 @@ pub fn write_jump_history(path: &Path, history: &JumpHistory) -> io::Result<()> 
     result
 }
 
-pub fn record_jump(path: &Path, project_path: &Path) -> io::Result<()> {
+pub fn record_jump(path: &Path, names: &DestinationNames, project_path: &Path) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -313,19 +335,22 @@ pub fn record_jump(path: &Path, project_path: &Path) -> io::Result<()> {
     fs2::FileExt::lock_exclusive(&lock)?;
 
     let mut history = match load_jump_history(path) {
-        Ok(history) => history,
+        Ok(history) => name_jump_history(history, names),
         Err(error) if error.kind() == io::ErrorKind::NotFound => JumpHistory::default(),
         Err(error) => return Err(error),
     };
 
+    let name = destination_name(names, project_path);
     if let Some(project) = history
         .projects
         .iter_mut()
-        .find(|project| project.path == project_path)
+        .find(|project| project.name == name)
     {
         project.jumps = project.jumps.saturating_add(1);
+        project.path = project_path.to_path_buf();
     } else {
         history.projects.push(JumpHistoryEntry {
+            name,
             path: project_path.to_path_buf(),
             jumps: 1,
         });
@@ -334,17 +359,151 @@ pub fn record_jump(path: &Path, project_path: &Path) -> io::Result<()> {
     write_jump_history(path, &history)
 }
 
+/// Names every destination by its folder name. Destinations that share a
+/// folder name get the shortest trailing path that tells them apart, such as
+/// `company/api`. Names use `/` on every platform.
 #[must_use]
-pub fn rank_projects_by_jumps(projects: Vec<PathBuf>, history: &JumpHistory) -> Vec<RankedProject> {
-    let jumps_by_path = history
+pub fn destination_names(destinations: &[PathBuf]) -> DestinationNames {
+    let mut names = DestinationNames::new();
+    let mut pending = destinations.iter().collect::<BTreeSet<_>>();
+    let mut depth = 1;
+    while !pending.is_empty() {
+        let mut by_suffix: BTreeMap<String, Vec<&PathBuf>> = BTreeMap::new();
+        for path in pending {
+            by_suffix
+                .entry(path_suffix(path, depth))
+                .or_default()
+                .push(path);
+        }
+        pending = BTreeSet::new();
+        for (suffix, paths) in by_suffix {
+            let exhausted = paths
+                .iter()
+                .all(|path| normal_components(path).len() <= depth);
+            if paths.len() == 1 || exhausted {
+                for path in paths {
+                    names.insert(path.clone(), suffix.clone());
+                }
+            } else {
+                pending.extend(paths);
+            }
+        }
+        depth += 1;
+    }
+    names
+}
+
+/// Resolves the history name for any path. A registered path uses its
+/// registered name. Another path adopts the registered name that its trailing
+/// folders spell, so a moved or retired checkout keeps counting toward the same
+/// destination; otherwise it is named by its folder.
+#[must_use]
+pub fn destination_name(names: &DestinationNames, path: &Path) -> String {
+    if let Some(name) = names.get(path) {
+        return name.clone();
+    }
+    let registered = names.values().collect::<BTreeSet<_>>();
+    (1..=normal_components(path).len())
+        .map(|depth| path_suffix(path, depth))
+        .find(|suffix| registered.contains(suffix))
+        .unwrap_or_else(|| path_suffix(path, 1))
+}
+
+/// Finds a registered destination by its name, for `hop <name>`. The match is
+/// exact; if nothing matches exactly, one case-insensitive match is accepted.
+/// Text shaped like a selector (`A1`) is never a name, so selectors keep their
+/// meaning whatever the projects are called.
+#[must_use]
+pub fn destination_for_name<'a>(names: &'a DestinationNames, target: &str) -> Option<&'a Path> {
+    let target = target.trim();
+    let letters = target.trim_end_matches(|ch: char| ch.is_ascii_digit());
+    let selector_shaped = !letters.is_empty()
+        && letters.len() < target.len()
+        && letters.chars().all(|ch| ch.is_ascii_alphabetic());
+    if target.is_empty() || selector_shaped {
+        return None;
+    }
+    if let Some((path, _)) = names.iter().find(|(_, name)| name.as_str() == target) {
+        return Some(path);
+    }
+    let mut loose = names
+        .iter()
+        .filter(|(_, name)| name.eq_ignore_ascii_case(target));
+    match (loose.next(), loose.next()) {
+        (Some((path, _)), None) => Some(path),
+        _ => None,
+    }
+}
+
+/// Keys history by destination name. Version 1 entries, which carry only a
+/// path, are named here and entries that resolve to one name are merged. An
+/// entry whose path is registered under a new name follows that name, and a
+/// registered destination always reports its registered path.
+#[must_use]
+pub fn name_jump_history(history: JumpHistory, names: &DestinationNames) -> JumpHistory {
+    let mut merged: BTreeMap<String, JumpHistoryEntry> = BTreeMap::new();
+    for mut entry in history.projects {
+        if let Some(name) = names.get(&entry.path) {
+            entry.name.clone_from(name);
+        } else if entry.name.is_empty() {
+            entry.name = destination_name(names, &entry.path);
+        }
+        match merged.entry(entry.name.clone()) {
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                slot.insert(entry);
+            }
+            std::collections::btree_map::Entry::Occupied(mut slot) => {
+                let kept = slot.get_mut();
+                kept.jumps = kept.jumps.saturating_add(entry.jumps);
+            }
+        }
+    }
+    for (path, name) in names {
+        if let Some(entry) = merged.get_mut(name) {
+            entry.path.clone_from(path);
+        }
+    }
+    JumpHistory {
+        version: HISTORY_VERSION,
+        projects: merged.into_values().collect(),
+    }
+}
+
+fn normal_components(path: &Path) -> Vec<String> {
+    path.components()
+        .filter_map(|part| match part {
+            std::path::Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn path_suffix(path: &Path, depth: usize) -> String {
+    let parts = normal_components(path);
+    if parts.is_empty() {
+        return path.display().to_string();
+    }
+    parts[parts.len().saturating_sub(depth)..].join("/")
+}
+
+#[must_use]
+pub fn rank_projects_by_jumps(
+    projects: Vec<PathBuf>,
+    names: &DestinationNames,
+    history: &JumpHistory,
+) -> Vec<RankedProject> {
+    let jumps_by_name = history
         .projects
         .iter()
-        .map(|project| (&project.path, project.jumps))
+        .map(|project| (project.name.as_str(), project.jumps))
         .collect::<BTreeMap<_, _>>();
     let mut ranked = projects
         .into_iter()
         .map(|path| RankedProject {
-            jumps: jumps_by_path.get(&path).copied().unwrap_or(0),
+            jumps: jumps_by_name
+                .get(destination_name(names, &path).as_str())
+                .copied()
+                .unwrap_or(0),
             path,
         })
         .collect::<Vec<_>>();
@@ -462,6 +621,23 @@ pub fn active_project_paths(config: &ProjectConfig) -> Vec<PathBuf> {
         .into_iter()
         .filter(|path| path.join(".git").exists())
         .collect()
+}
+
+/// Every jump destination in the config, across scopes and regardless of
+/// whether it currently exists, so history names do not depend on mounts.
+#[must_use]
+pub fn configured_destinations(config: &ProjectConfig) -> Vec<PathBuf> {
+    if config.version == SCOPED_CONFIG_VERSION {
+        return config
+            .sections
+            .iter()
+            .flat_map(section_destinations)
+            .collect();
+    }
+    let mut destinations = configured_project_paths(config);
+    // Legacy sections expose their root through the implicit selector 0.
+    destinations.extend(config.sections.iter().map(|section| section.root.clone()));
+    destinations
 }
 
 #[must_use]
@@ -603,15 +779,10 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
         match (current_section.as_mut(), current_project.as_mut()) {
             (Some(section), None) => match key {
                 "scope" => {
-                    section.scope = Some(match parse_toml_string(value, line_number)?.as_str() {
-                        "personal" => Scope::Personal,
-                        "work" => Scope::Work,
-                        _ => {
-                            return Err(format!(
-                                "line {line_number}: scope must be personal or work"
-                            ));
-                        }
-                    });
+                    let name = parse_toml_string(value, line_number)?;
+                    section.scope = Some(Scope::from_name(&name).ok_or_else(|| {
+                        format!("line {line_number}: scope must be personal, work or archive")
+                    })?);
                 }
                 "jump_root" => section.jump_root = Some(parse_toml_bool(value, line_number)?),
                 "root" => {
@@ -684,7 +855,7 @@ pub fn parse_project_config(contents: &str) -> Result<ProjectConfig, String> {
         validate_scoped_sections(&sections)?;
     } else if sections
         .iter()
-        .any(|section| section.scope == Scope::Work || section.jump_root)
+        .any(|section| section.scope != Scope::Personal || section.jump_root)
     {
         return Err("scope and jump_root require config version = 5".to_owned());
     }
@@ -840,6 +1011,7 @@ pub fn parse_jump_history(contents: &str) -> Result<JumpHistory, String> {
 
         match current_project.as_mut() {
             Some(project) => match key {
+                "name" => project.name = Some(parse_toml_string(value, line_number)?),
                 "path" => {
                     project.path = Some(PathBuf::from(parse_toml_string(value, line_number)?))
                 }
@@ -857,9 +1029,14 @@ pub fn parse_jump_history(contents: &str) -> Result<JumpHistory, String> {
         finish_jump_history_entry(project, &mut projects, contents.lines().count() + 1)?;
     }
 
-    let version = version.unwrap_or(HISTORY_VERSION);
-    if version != HISTORY_VERSION {
+    let version = version.unwrap_or(1);
+    if !(1..=HISTORY_VERSION).contains(&version) {
         return Err(format!("unsupported history version {version}"));
+    }
+    if version == HISTORY_VERSION && projects.iter().any(|project| project.name.is_empty()) {
+        return Err(format!(
+            "history version {HISTORY_VERSION} requires a name for every entry"
+        ));
     }
 
     Ok(JumpHistory { version, projects })
@@ -868,13 +1045,15 @@ pub fn parse_jump_history(contents: &str) -> Result<JumpHistory, String> {
 #[must_use]
 pub fn render_jump_history(history: &JumpHistory) -> String {
     let mut output = String::from(
-        "# hop local jump history\n# Updated automatically after successful directory changes.\n\nversion = 1\n",
+        "# hop local jump history\n# Updated automatically after successful directory changes.\n# Counts belong to the destination name; path is its current or last known location.\n\nversion = 2\n",
     );
     let mut projects = history.projects.iter().collect::<Vec<_>>();
-    projects.sort_by(|left, right| compare_paths_alphanumeric(&left.path, &right.path));
+    projects.sort_by(|left, right| compare_alphanumeric(&left.name, &right.name));
 
     for project in projects {
-        output.push_str("\n[[projects]]\npath = \"");
+        output.push_str("\n[[projects]]\nname = \"");
+        push_toml_string(&mut output, &project.name);
+        output.push_str("\"\npath = \"");
         push_toml_string(&mut output, &project.path.display().to_string());
         output.push_str("\"\njumps = ");
         output.push_str(&project.jumps.to_string());
@@ -1122,6 +1301,7 @@ struct ProjectSectionDraft {
 
 #[derive(Default)]
 struct JumpHistoryEntryDraft {
+    name: Option<String>,
     path: Option<PathBuf>,
     jumps: Option<u64>,
 }
@@ -1190,6 +1370,7 @@ fn finish_jump_history_entry(
         .ok_or_else(|| format!("line {line_number}: history entry is missing path"))?;
 
     projects.push(JumpHistoryEntry {
+        name: project.name.unwrap_or_default(),
         path,
         jumps: project.jumps.unwrap_or(0),
     });
@@ -2185,15 +2366,17 @@ active = true
     }
 
     #[test]
-    fn jump_history_round_trips_and_sorts_paths() {
+    fn jump_history_round_trips_and_sorts_names() {
         let history = JumpHistory {
-            version: 1,
+            version: 2,
             projects: vec![
                 JumpHistoryEntry {
+                    name: "project-2".to_owned(),
                     path: PathBuf::from("/home/alex/work/project-2"),
                     jumps: 7,
                 },
                 JumpHistoryEntry {
+                    name: "project-10".to_owned(),
                     path: PathBuf::from("/home/alex/work/project-10"),
                     jumps: 3,
                 },
@@ -2214,14 +2397,16 @@ active = true
         let path = root.join("history.toml");
         let project = PathBuf::from("/home/alex/work/hop");
 
-        record_jump(&path, &project).expect("record first jump");
-        record_jump(&path, &project).expect("record second jump");
+        let names = DestinationNames::new();
+        record_jump(&path, &names, &project).expect("record first jump");
+        record_jump(&path, &names, &project).expect("record second jump");
 
         assert_eq!(
             load_jump_history(&path).expect("load history"),
             JumpHistory {
-                version: 1,
+                version: 2,
                 projects: vec![JumpHistoryEntry {
+                    name: "hop".to_owned(),
                     path: project,
                     jumps: 2,
                 }],
@@ -2253,8 +2438,9 @@ active = true
         write_jump_history(
             &path,
             &JumpHistory {
-                version: 1,
+                version: 2,
                 projects: vec![JumpHistoryEntry {
+                    name: "hop".to_owned(),
                     path: project.clone(),
                     jumps: u64::MAX,
                 }],
@@ -2262,7 +2448,7 @@ active = true
         )
         .expect("write saturated history");
 
-        record_jump(&path, &project).expect("record saturated jump");
+        record_jump(&path, &DestinationNames::new(), &project).expect("record saturated jump");
 
         assert_eq!(
             load_jump_history(&path)
@@ -2283,14 +2469,17 @@ active = true
             PathBuf::from("/work/project-2"),
         ];
         let history = JumpHistory {
-            version: 1,
+            version: 2,
             projects: vec![JumpHistoryEntry {
-                path: PathBuf::from("/work/favorite"),
+                name: "favorite".to_owned(),
+                // The count follows the name after the project moved.
+                path: PathBuf::from("/old/favorite"),
                 jumps: 4,
             }],
         };
 
-        let ranked = rank_projects_by_jumps(projects, &history);
+        let ranked =
+            rank_projects_by_jumps(projects.clone(), &destination_names(&projects), &history);
 
         assert_eq!(
             ranked,
@@ -2309,6 +2498,92 @@ active = true
                 },
             ]
         );
+    }
+
+    #[test]
+    fn destinations_sharing_a_folder_name_get_the_shortest_distinct_name() {
+        let paths = [
+            "/dev/tools/hop",
+            "/dev/corporate/one/api",
+            "/dev/corporate/two/api",
+            "/dev/corporate/one",
+        ]
+        .map(PathBuf::from);
+        let names = destination_names(&paths);
+
+        assert_eq!(names[&paths[0]], "hop");
+        assert_eq!(names[&paths[1]], "one/api");
+        assert_eq!(names[&paths[2]], "two/api");
+        assert_eq!(names[&paths[3]], "one");
+        // A retired checkout counts toward the destination its folders spell.
+        assert_eq!(
+            destination_name(&names, Path::new("/old/layout/two/api")),
+            "two/api"
+        );
+        assert_eq!(destination_name(&names, Path::new("/old/cli/hop")), "hop");
+        assert_eq!(destination_name(&names, Path::new("/old/gone")), "gone");
+
+        assert_eq!(
+            destination_for_name(&names, "two/api"),
+            Some(paths[2].as_path())
+        );
+        assert_eq!(
+            destination_for_name(&names, "HOP"),
+            Some(paths[0].as_path())
+        );
+        // A bare folder name shared by two destinations names neither.
+        assert_eq!(destination_for_name(&names, "api"), None);
+        assert_eq!(destination_for_name(&names, "missing"), None);
+        // Selector-shaped text stays a selector even when a project has that name.
+        let shadow = destination_names(&[PathBuf::from("/dev/a1")]);
+        assert_eq!(destination_for_name(&shadow, "a1"), None);
+    }
+
+    #[test]
+    fn path_keyed_history_is_named_and_merged_across_moves() {
+        let current = PathBuf::from("/dev/tools/hop");
+        let names = destination_names(std::slice::from_ref(&current));
+        let legacy = parse_jump_history(
+            "version = 1\n\n[[projects]]\npath = \"/old/cli/hop\"\njumps = 4\n\n[[projects]]\npath = \"/older/hop\"\njumps = 5\n\n[[projects]]\npath = \"/old/retired\"\njumps = 2\n",
+        )
+        .expect("version 1 history");
+
+        let named = name_jump_history(legacy, &names);
+
+        assert_eq!(
+            named,
+            JumpHistory {
+                version: 2,
+                projects: vec![
+                    JumpHistoryEntry {
+                        name: "hop".to_owned(),
+                        path: current.clone(),
+                        jumps: 9,
+                    },
+                    JumpHistoryEntry {
+                        name: "retired".to_owned(),
+                        path: PathBuf::from("/old/retired"),
+                        jumps: 2,
+                    },
+                ],
+            }
+        );
+        assert_eq!(
+            parse_jump_history(&render_jump_history(&named)),
+            Ok(named.clone())
+        );
+
+        // A second destination with the same folder name renames the first;
+        // its count follows through the recorded path.
+        let twin = PathBuf::from("/dev/other/hop");
+        let renamed = name_jump_history(named, &destination_names(&[current, twin]));
+        let followed = renamed
+            .projects
+            .iter()
+            .find(|entry| entry.name == "tools/hop")
+            .expect("renamed entry");
+        assert_eq!(followed.jumps, 9);
+        assert!(parse_jump_history("version = 2\n[[projects]]\npath = \"/a\"\n").is_err());
     }
 
     fn temp_root(name: &str) -> PathBuf {

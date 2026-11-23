@@ -2,9 +2,11 @@
 
 ## Scopes and discovery
 
-Personal and Work are explicit saved scopes. Personal is the default from any
-working directory. The `--scope` flag selects one scope for jumps and lists,
-including the frequent view.
+Personal, Work, and Archive are explicit saved scopes. Personal is the default
+from any working directory. The `--scope` flag selects one scope for jumps and
+lists, including the frequent view. Archive holds retired material that should
+stay reachable without appearing in the daily views; its routing file is
+optional, and a missing file means an empty scope.
 
 The version 5 files under `routing/` record flat sections with a root,
 relative items, and an optional `jump_root = true`. The filename determines
@@ -98,14 +100,41 @@ Unconfigured or currently missing projects may retain history but are omitted fr
 the ranking. If configured and present again, their prior count applies.
 `hop config` never rewrites jump history.
 
-The shell bridge records the exact path emitted by Hop. History is not
-canonicalized or merged across symlinked or differently spelled paths.
+History version 2 keys each count by destination name and stores a path as an
+attribute: the registered location, or the last known one once the destination
+is no longer registered. The owner reorganizes project folders
+often, and path-keyed counts split one project across every place it had lived.
+
+- The name is the destination's folder name. Destinations sharing a folder name
+  use the shortest trailing path that distinguishes them, for example
+  `Aveni/ai-workspace`. Names are derived from all registered destinations in
+  every scope, whether or not they currently exist, so they are not a second
+  list to maintain and do not change with mounts or the active view.
+- Moving a project and updating its registered path keeps the count. Renaming
+  the folder starts a new count.
+- When a second destination with the same folder name is registered, both
+  names grow a parent folder; an existing count follows through its recorded
+  path while that path stays registered.
+- Version 1 history is read as before and rewritten as version 2 by the next
+  recorded jump. An old path adopts the registered name spelled by its trailing
+  folders, so counts from earlier layouts merge into the current destination;
+  other old paths keep a count under their folder name.
+
+A destination name is also a target: `hop <name>` selects the destination in
+any scope, exactly or by one case-insensitive match. Instructions and scripts
+can therefore refer to a project by name and stay valid when it moves. Text
+shaped like a selector is never treated as a name, and an all-digit target keeps
+its meaning as a position in the frequent view.
+
+The shell bridge records the exact path emitted by Hop. Paths are not
+canonicalized, so a symlinked spelling of an unregistered path is named by its
+own folder.
 
 ## Usage statistics
 
-`hop stats` reports the total and per-destination counts from jump history,
-including previously visited paths absent from the current configuration or
-filesystem. Concurrent shell jumps serialize history updates.
+`hop stats` reports the total and, for each destination, the count, name and
+last path from jump history, including destinations absent from the current
+configuration or filesystem. Concurrent shell jumps serialize history updates.
 
 Interactive search time measures the interval from the first selection prompt to
 a valid selection or cancellation. Invalid selections keep the same timer
@@ -117,7 +146,9 @@ jump. `hop stats` shows the sample count and mean duration for retained events.
 ## Protecting tests
 
 - `src/lib.rs`: history round-trip, increment behavior, saturating counters,
-  and frequency/path ordering.
+  frequency/path ordering, destination naming, and version 1 conversion.
+- `tests/navigation.rs`: the optional Archive scope and a count that follows a
+  moved destination.
 - `src/main.rs`: frequent CLI parsing, numeric selection, and post-`cd` shell
   recording.
 

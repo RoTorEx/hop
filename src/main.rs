@@ -12,11 +12,12 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
 use hop::{
-    APP_NAME, JumpHistory, ProjectConfig, RankedProject, SCOPED_CONFIG_VERSION, Scope, Sector,
-    active_project_paths, cli_home_path, config_path, configured_project_paths, configured_sectors,
+    APP_NAME, DestinationNames, JumpHistory, ProjectConfig, RankedProject, SCOPED_CONFIG_VERSION,
+    Scope, Sector, active_project_paths, cli_home_path, config_path, configured_destinations,
+    configured_project_paths, configured_sectors, destination_for_name, destination_names,
     discover_projects, discover_projects_with_progress, group_projects, history_path,
-    load_jump_history, load_project_config, load_routing, merge_project_config, parse_choice,
-    rank_projects_by_jumps, record_jump, refresh_project_config, routing_path,
+    load_jump_history, load_project_config, load_routing, merge_project_config, name_jump_history,
+    parse_choice, rank_projects_by_jumps, record_jump, refresh_project_config, routing_path,
     section_destinations, write_project_config,
 };
 
@@ -51,6 +52,7 @@ enum Command {
 
 struct NavigationProjects {
     root: PathBuf,
+    names: DestinationNames,
     projects: Vec<PathBuf>,
     sectors: Option<Vec<Sector>>,
     config_source: Option<PathBuf>,
@@ -246,7 +248,11 @@ fn run_list(options: Options) -> ExitCode {
 }
 
 fn run_stats(color: bool) -> ExitCode {
-    let history = match load_optional_jump_history() {
+    let names = match saved_destination_names() {
+        Ok(names) => names,
+        Err(message) => return fail(&message, color),
+    };
+    let mut history = match load_optional_jump_history(&names) {
         Ok(history) => history,
         Err(message) => return fail(&message, color),
     };
@@ -255,14 +261,17 @@ fn run_stats(color: bool) -> ExitCode {
         .iter()
         .map(|entry| u128::from(entry.jumps))
         .sum();
-    let destinations = history
+    history
         .projects
-        .iter()
-        .map(|entry| entry.path.clone())
-        .collect();
+        .sort_by_key(|entry| std::cmp::Reverse(entry.jumps));
     eprintln!("Total successful jumps: {total}");
-    for entry in rank_projects_by_jumps(destinations, &history) {
-        eprintln!("  {}  {}", entry.jumps, entry.path.display());
+    for entry in &history.projects {
+        eprintln!(
+            "  {}  {}  {}",
+            entry.jumps,
+            entry.name,
+            entry.path.display()
+        );
     }
 
     eprintln!("Interactive search time (retained events, up to 90 days):");
@@ -294,10 +303,29 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
     };
     let NavigationProjects {
         root,
+        names,
         projects,
         sectors: configured_groups,
         config_source,
     } = navigation;
+
+    // A destination name selects across scopes; it is checked before the
+    // scope's own view so `hop <name>` works whatever scope is active.
+    let numeric = |target: &str| target.trim().chars().all(|ch| ch.is_ascii_digit());
+    if let Some(path) = options
+        .target
+        .as_deref()
+        .filter(|target| !numeric(target))
+        .and_then(|target| destination_for_name(&names, target))
+    {
+        if path.is_dir() {
+            return emit_path(path, options.copy_path, options.color);
+        }
+        return fail(
+            &format!("{} is registered but not available", path.display()),
+            options.color,
+        );
+    }
 
     if projects.is_empty() && configured_groups.as_ref().is_none_or(Vec::is_empty) {
         if let Some(config_source) = config_source {
@@ -315,7 +343,7 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
     }
 
     if options.frequent {
-        let history = match load_optional_jump_history() {
+        let history = match load_optional_jump_history(&names) {
             Ok(history) => history,
             Err(message) => return fail(&message, options.color),
         };
@@ -330,7 +358,7 @@ fn run_navigation(options: Options, interactive: bool) -> ExitCode {
         }
         destinations.sort();
         destinations.dedup();
-        let ranked = rank_projects_by_jumps(destinations, &history);
+        let ranked = rank_projects_by_jumps(destinations, &names, &history);
 
         if let Some(target) = options.target {
             return choose_frequent_target(&ranked, &target, options.copy_path, options.color);
@@ -374,23 +402,25 @@ fn run_record_jump(options: Options) -> ExitCode {
         Err(message) => return fail(&message, options.color),
     };
 
+    let config = load_saved_config(&home).ok().and_then(|(_, config)| config);
+    let names = config
+        .as_ref()
+        .map(|config| destination_names(&configured_destinations(config)))
+        .unwrap_or_default();
     if !project.join(".git").exists() {
-        let configured_root = load_saved_config(&home)
-            .ok()
-            .and_then(|(_, config)| config)
-            .is_some_and(|config| {
-                if config.version == SCOPED_CONFIG_VERSION {
-                    config
-                        .sections
-                        .iter()
-                        .any(|section| section.jump_root && section.root == project)
-                } else {
-                    config
-                        .sections
-                        .iter()
-                        .any(|section| section.root == project)
-                }
-            });
+        let configured_root = config.is_some_and(|config| {
+            if config.version == SCOPED_CONFIG_VERSION {
+                config
+                    .sections
+                    .iter()
+                    .any(|section| section.jump_root && section.root == project)
+            } else {
+                config
+                    .sections
+                    .iter()
+                    .any(|section| section.root == project)
+            }
+        });
         if !configured_root {
             return ExitCode::SUCCESS;
         }
@@ -401,7 +431,7 @@ fn run_record_jump(options: Options) -> ExitCode {
         "success",
         json!({"stage":"shell_cd_completed"}),
     );
-    match record_jump(&history_path(&home), &project) {
+    match record_jump(&history_path(&home), &names, &project) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => fail(
             &format!("Cannot update jump history: {error}"),
@@ -710,11 +740,14 @@ fn projects_for_jump(scope: Scope) -> Result<NavigationProjects, String> {
     let home = home_dir()?;
     let (path, config) = load_saved_config(&home)?;
     if let Some(mut config) = config {
+        // Names cover every scope so a count never depends on the active view.
+        let names = destination_names(&configured_destinations(&config));
         if config.version == SCOPED_CONFIG_VERSION {
             config.sections.retain(|section| section.scope == scope);
-        } else if scope == Scope::Work {
+        } else if scope != Scope::Personal {
             return Err(format!(
-                "Work requires a version 5 config at {}.",
+                "The {} scope requires a version 5 config at {}.",
+                scope.name(),
                 path.display()
             ));
         }
@@ -730,6 +763,7 @@ fn projects_for_jump(scope: Scope) -> Result<NavigationProjects, String> {
         );
         return Ok(NavigationProjects {
             root: home,
+            names,
             projects,
             sectors,
             config_source: Some(path),
@@ -764,13 +798,23 @@ fn load_optional_project_config(path: &Path) -> Result<Option<ProjectConfig>, St
     }
 }
 
-fn load_optional_jump_history() -> Result<JumpHistory, String> {
+fn saved_destination_names() -> Result<DestinationNames, String> {
+    let Ok(home) = home_dir() else {
+        return Ok(DestinationNames::new());
+    };
+    let (_, config) = load_saved_config(&home)?;
+    Ok(config
+        .map(|config| destination_names(&configured_destinations(&config)))
+        .unwrap_or_default())
+}
+
+fn load_optional_jump_history(names: &DestinationNames) -> Result<JumpHistory, String> {
     let Ok(home) = home_dir() else {
         return Ok(JumpHistory::default());
     };
     let path = history_path(&home);
     match load_jump_history(&path) {
-        Ok(history) => Ok(history),
+        Ok(history) => Ok(name_jump_history(history, names)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(JumpHistory::default()),
         Err(error) => Err(format!("Cannot read {}: {error}", path.display())),
     }
@@ -895,7 +939,16 @@ fn frequent_path_for_target<'a>(
 fn choose_target(sectors: &[Sector], target: &str, copy_path: bool, color: bool) -> ExitCode {
     let choice = match parse_choice(target) {
         Ok(choice) => choice,
-        Err(error) => return fail(error.message(), color),
+        Err(error) => {
+            return fail(
+                &format!(
+                    "No destination is named `{}`, and as a selector: {}",
+                    target.trim(),
+                    error.message()
+                ),
+                color,
+            );
+        }
     };
 
     match path_for_choice(sectors, choice) {
@@ -1276,11 +1329,12 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Options, String> {
                 if scope.is_some() {
                     return Err("--scope can be specified only once".to_owned());
                 }
-                scope = Some(match args.next().as_deref() {
-                    Some("personal") => Scope::Personal,
-                    Some("work") => Scope::Work,
-                    _ => return Err("--scope requires personal or work".to_owned()),
-                });
+                scope = Some(
+                    args.next()
+                        .as_deref()
+                        .and_then(Scope::from_name)
+                        .ok_or_else(|| "--scope requires personal, work or archive".to_owned())?,
+                );
             }
             "--root" => {
                 let Some(value) = args.next() else {
@@ -1619,14 +1673,15 @@ Tiny interactive project navigator for shells on local machines, VMs, and VPS ho
     --copy-path      Copy the selected path instead of printing it
     --frequent       Rank all projects by successful jump count
     --root <dir>      Set the directory for hop scan or legacy config
-    --scope <scope>  Select personal (default) or work for jumps and list
+    --scope <scope>  Select personal (default), work or archive for jumps and list
     --no-color        Disable ANSI color output
     -v, -V, --version Print version
     -h, --help        Print help
 
 The project UI writes to stderr. List mode prints it without prompting for a
 selection. Jump mode prints only the selected project path to stdout, so a
-shell wrapper can safely cd into it. Target ~ prints the hop home directory.
+shell wrapper can safely cd into it. A target is a selector such as A1 or a
+destination name such as hop. Target ~ prints the hop home directory.
 Copy mode writes no stdout and copies the selected project path to the
 clipboard. Frequent mode uses numeric positions instead of sector labels.",
         paint(color, BOLD, &title_case(APP_NAME)),

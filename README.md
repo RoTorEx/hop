@@ -180,6 +180,23 @@ Jump counts are kept locally in `~/.toolbelt/hop/history.toml`, separately from
 the manually editable project config. The installed shell bridge records a jump
 only after it changes directory successfully. `hop stats` prints the total and
 per-destination counts, including past destinations that are no longer available.
+
+Every destination has a name, and `hop <name>` jumps to it from any scope:
+`hop voxray`, or `hop Aveni/ai-workspace` when a folder name is shared. A script
+or an agent resolves a project the same way without the shell bridge:
+`~/.toolbelt/hop/bin/hop voxray` prints the path. The lookup keeps working after
+the project moves, because the name does not change. Text shaped like a selector
+(`A1`) is always a selector.
+
+A count belongs to the destination's name; the path shown beside it is the
+registered location, or the last known one for a retired destination. The name is the destination's folder name. Destinations
+that share a folder name are told apart by the shortest trailing path, such as
+`Aveni/ai-workspace` and `Thira/ai-workspace`. Moving a project and updating
+its registered path therefore keeps its count and its place in the frequent
+view. Renaming the folder starts a new count. Path-keyed history written by
+earlier versions is converted on the next recorded jump; counts of old paths
+that spell a registered name are added to that destination.
+
 It also shows average interactive search time and sample counts by view and
 outcome for the retained local log. Search time runs from the selection prompt
 to a valid selection or cancellation, including time spent on invalid attempts.
@@ -187,7 +204,8 @@ Direct selectors, piped input, and copy mode are excluded.
 
 Hop defaults to Personal, regardless of the current directory. Use
 `hop --scope work` to choose a Work destination, `hop A1 --scope work` to jump
-directly, and `hop list --scope work` to preview the view.
+directly, and `hop list --scope work` to preview the view. `--scope archive`
+selects retired material the same way.
 Selectors and the frequent view use only the selected scope. Navigation loads
 the saved config and checks registered paths without recursively scanning.
 
@@ -196,7 +214,8 @@ the saved config and checks registered paths without recursively scanning.
 Save Personal destinations in `~/.toolbelt/hop/routing/personal.toml` and Work
 destinations in `~/.toolbelt/hop/routing/work.toml`. Both files use version 5.
 Use a file containing only `version = 5` for an empty scope. The filename
-determines scope. Shared scan settings live in the optional `config.toml`
+determines scope. An optional `routing/archive.toml` in the same format defines
+the Archive scope for retired material; without the file that scope is empty. Shared scan settings live in the optional `config.toml`
 under the Hop home directory.
 
 Each group is one flat section. Its root labels the group and anchors its
@@ -238,7 +257,7 @@ on disk because users jump only to its listed items.
 
 ### Register or move a project
 
-1. Open the routing file for the scope. `hop config` validates both routing
+1. Open the routing file for the scope. `hop config` validates the routing
    files and prints their location.
 2. Add a repository path relative to the chosen section's `root` in its
    `items`. To register a separate project group, add one section with its
@@ -250,7 +269,7 @@ on disk because users jump only to its listed items.
 
 `hop scan` is optional for finding unregistered checkouts and unavailable
 entries, for example after moving several repositories. It compares Git
-repositories under a filesystem root against both scopes, reports the
+repositories under a filesystem root against every scope, reports the
 differences, and leaves the config unchanged. Git metadata can show that a
 checkout exists and where it lives. The user chooses where it belongs.
 Use `hop scan --root <dir>` to narrow the walk. Otherwise it uses the saved scan

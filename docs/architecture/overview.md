@@ -16,8 +16,8 @@ on developer machines, VMs, and VPS hosts.
 5. Known noisy directories such as `construction_side`, `node_modules`,
    `target`, virtualenvs, caches, and hidden directories are skipped.
 6. Sections sort by full root path and items by relative path, using natural
-   alphanumeric order. Version 5 filters explicit sections by Personal or Work,
-   and validates ownership across both scopes before selection.
+   alphanumeric order. Version 5 filters explicit sections by Personal, Work or
+   Archive, and validates ownership across all scopes before selection.
 7. The interactive UI is written to stderr.
 8. Jump mode writes the selected path as the only stdout output.
 9. The `~` target is a shortcut for the hop home directory,
@@ -36,8 +36,9 @@ on developer machines, VMs, and VPS hosts.
     selectors instead of sector labels.
 14. After a project `cd` succeeds, the shell bridge invokes the executable's
     internal recorder. The recorder atomically updates
-    `~/.toolbelt/hop/history.toml`; copy mode, failed changes, and `hop ~` do not
-    record a jump.
+    `~/.toolbelt/hop/history.toml`, keyed by a destination name derived from the
+    registered paths; copy mode, failed changes, and `hop ~` do not record a
+    jump.
 15. `list` renders the default grouped view, or the ranked view when combined
     with `--frequent`, and exits without reading a selection or writing a path
     to stdout.

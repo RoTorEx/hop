@@ -4,6 +4,10 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+- Key jump history by destination name so counts and the frequent view survive moving a project; path-keyed history converts on the next recorded jump and merges counts from earlier layouts. `hop stats` shows the name and last path.
+- Add the optional Archive scope: `routing/archive.toml` and `--scope archive`.
+- Accept a destination name as a target in any scope: `hop voxray` jumps there and the binary prints its path for scripts.
+
 ## [0.4.0] - 2026-11-21
 
 - Store Personal and Work destinations separately in `routing/personal.toml` and `routing/work.toml`.

@@ -9,16 +9,16 @@ change to its shell integration.
 
 - The user owns the project configuration and all locally recorded jump data.
 - Discovery finds candidate Git repositories by their `.git` metadata.
-- Users assign saved destinations to flat sections in `routing/personal.toml`
-  or `routing/work.toml`. Each
+- Users assign saved destinations to flat sections in `routing/personal.toml`,
+  `routing/work.toml`, or the optional `routing/archive.toml`. Each
   section can register relative items and optionally its root via selector `0`.
 - A successful jump is a directory change completed by the installed shell
   integration, not merely a selection or copied path.
 
 ## Core flows and invariants
 
-- Personal is the default scope. Jumps and lists accept `--scope personal`
-  or `--scope work` to select saved sections explicitly. Navigation checks registered paths without recursive discovery.
+- Personal is the default scope. Jumps and lists accept `--scope personal`,
+  `--scope work`, or `--scope archive` to select saved sections explicitly. Navigation checks registered paths without recursive discovery.
 - A destination has one section. A registered root or item and its descendants
   belong to the same section. Container folders may organize groups on disk.
 - `hop scan` shows progress and reports candidates without assigning them to
@@ -34,6 +34,9 @@ change to its shell integration.
   telemetry.
 - Copying a path, selecting a path without an active shell integration, a
   failed `cd`, and the `hop ~` shortcut do not count as project jumps.
+- A jump count belongs to the destination's name, so it survives moving the
+  project to another folder or scope. The same name is a jump target in every
+  scope, which lets instructions name a project instead of its path.
 
 ## Non-goals
 
