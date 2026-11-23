@@ -8,8 +8,8 @@ Do not read the parent kernel repo outside this repository during normal work.
 
 ## Rule priority
 
-1. Current user instruction
-2. Hard safety/security/boundary constraints
+1. Application/platform rules and hard safety/security/boundary constraints
+2. Current user instruction
 3. Project truth docs
 4. `.vibe/kernel/*.md`
 5. General best practices
