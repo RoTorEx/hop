@@ -4,6 +4,9 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+- Publish native Linux x86_64 and aarch64 archives for installation and `hop update`.
+- Publish the complete set of Linux, macOS and Windows archives after verifying every build.
+
 ## [0.5.1] - 2026-11-26
 
 - Publish Windows x86_64 release ZIPs alongside the macOS archives. Verify directory jumps, scoped routing, and history on both Windows PowerShell 5.1 and PowerShell 7.

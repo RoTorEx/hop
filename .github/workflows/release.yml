@@ -14,8 +14,6 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.name }} release binary
-    permissions:
-      contents: write
     env:
       CARGO_TARGET_DIR: target
     defaults:
@@ -25,6 +23,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: Linux x86_64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            archive: hop-linux-x86_64.tar.gz
+          - name: Linux aarch64
+            os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            archive: hop-linux-aarch64.tar.gz
           - name: macOS x86_64
             os: macos-15-intel
             target: x86_64-apple-darwin
@@ -79,21 +85,60 @@ jobs:
           cp "target/${{ matrix.target }}/release/hop" dist/hop
           tar -C dist -czf "${{ matrix.archive }}" hop
 
+      - name: Run the packaged Linux binary
+        if: runner.os == 'Linux'
+        run: |
+          set -eu
+          extracted=$(mktemp -d)
+          trap 'rm -rf "$extracted"' EXIT
+          tar -xzf "${{ matrix.archive }}" -C "$extracted"
+          "$extracted/hop" --version --no-color
+
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.archive }}
           path: ${{ matrix.archive }}
 
-      - name: Publish GitHub release asset
+  release:
+    name: Verify and publish release archives
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download release archives
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Verify the complete set of release archives
+        run: |
+          set -eu
+          for asset in hop-linux-x86_64.tar.gz hop-linux-aarch64.tar.gz \
+                       hop-macos-x86_64.tar.gz hop-macos-aarch64.tar.gz hop-windows-x86_64.zip; do
+            test -s "dist/$asset"
+          done
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 5
+          sha256sum dist/*
+
+      - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" \
-              --title "$GITHUB_REF_NAME" \
-              --notes "hop $GITHUB_REF_NAME" \
-              || gh release view "$GITHUB_REF_NAME" >/dev/null
+          set -euo pipefail
+          if draft=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$draft" = true ]; then
+              gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+              gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+            else
+              published=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort)
+              expected=$(basename -a dist/* | sort)
+              test "$published" = "$expected"
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --title "$GITHUB_REF_NAME" --notes "hop $GITHUB_REF_NAME"
           fi
-          gh release upload "$GITHUB_REF_NAME" "${{ matrix.archive }}" --clobber

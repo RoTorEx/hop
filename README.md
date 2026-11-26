@@ -109,7 +109,26 @@ cargo build --release --locked
 .\scripts\test-windows.ps1 -Binary "$env:CARGO_TARGET_DIR\release\hop.exe"
 ```
 
-Linux users can install from source with the Unix installer.
+## Linux
+
+The [latest GitHub release](https://github.com/RoTorEx/hop/releases/latest)
+includes native `hop-linux-x86_64.tar.gz` and `hop-linux-aarch64.tar.gz` archives
+built on Ubuntu 22.04. An existing installation can fetch the matching archive
+with `hop update`.
+
+For a first installation from an archive, download the one for your CPU and
+extract `hop` into the Toolbelt bin directory. This example uses x86_64.
+
+```bash
+hop_home="$HOME/.toolbelt/hop"
+mkdir -p "$hop_home/bin"
+tar -xzf hop-linux-x86_64.tar.gz -C "$hop_home/bin" hop
+"$hop_home/bin/hop" --shell-init > "$hop_home/init.zsh"
+```
+
+Add `source "$HOME/.toolbelt/hop/init.zsh"` to your bash or zsh profile and
+open a new shell. Use the installer in [Quickstart](#quickstart) to build from
+source.
 
 ## Usage
 
@@ -284,11 +303,13 @@ make release-push
 updates release metadata, creates a dedicated release commit, and creates a
 `vX.Y.Z` tag. `make release-push` pushes `main` and tags.
 
-Pushing a `vX.Y.Z` tag builds and attaches Windows x86_64 and macOS x86_64
-and aarch64 release binaries. Pushes to `main`, pull requests, and manual
-workflow runs build the same artifacts for verification. Each target runs
-native Rust tests. Windows also checks scoped navigation, directory changes
-and history in Windows PowerShell 5.1 and PowerShell 7.
+Pushing a `vX.Y.Z` tag publishes the complete archive set after all builds
+and tests pass. The set contains Linux and macOS for x86_64 and aarch64 and
+Windows for x86_64. Pushes to `main`, pull requests, and manual workflow
+runs assemble the same archives for verification. Each target runs native
+Rust tests. Linux runs the executable from its archive. Windows checks
+scoped navigation, directory changes and history in Windows PowerShell 5.1
+and PowerShell 7.
 
 ## Kernel sync (sanity check)
 
