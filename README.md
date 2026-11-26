@@ -85,33 +85,35 @@ hop --copy-path A1
 
 ## Windows
 
-The [latest GitHub release](https://github.com/RoTorEx/hop/releases/latest) includes the `hop-windows-x86_64.zip` archive for 64-bit Windows. The archive contains `hop.exe`. Run the following in Windows PowerShell 5.1 or PowerShell 7.
+The [latest GitHub release](https://github.com/RoTorEx/hop/releases/latest) includes the `hop-windows-x86_64.zip` archive for 64-bit Windows. Run the following in Windows PowerShell 5.1 or PowerShell 7. For a custom home, set `$hopHome` to its absolute path before the script builds `$hopBin`.
 
 ```powershell
 $hopHome = Join-Path $env:USERPROFILE '.hop'
+$legacyHome = Join-Path $env:USERPROFILE '.toolbelt\hop'
+if ((-not (Test-Path -LiteralPath $hopHome)) -and (Test-Path -LiteralPath $legacyHome -PathType Container)) {
+    $hopHome = $legacyHome
+}
+
 $hopBin = Join-Path $hopHome 'bin'
 $hopArchive = Join-Path ([IO.Path]::GetTempPath()) ('hop-' + [guid]::NewGuid() + '.zip')
 $hopUrl = 'https://github.com/RoTorEx/hop/releases/latest/download/hop-windows-x86_64.zip'
 New-Item -ItemType Directory -Path $hopBin -Force | Out-Null
 try {
-    Invoke-WebRequest -UseBasicParsing -Uri $hopUrl -OutFile $hopArchive
-    Expand-Archive -LiteralPath $hopArchive -DestinationPath $hopBin -Force
+    Invoke-WebRequest -UseBasicParsing -Uri $hopUrl -OutFile $hopArchive -ErrorAction Stop
+    Expand-Archive -LiteralPath $hopArchive -DestinationPath $hopBin -Force -ErrorAction Stop
     New-Item -ItemType File -Path (Join-Path $hopHome '.hop-install') -Force | Out-Null
 } finally {
     if (Test-Path -LiteralPath $hopArchive) { Remove-Item -LiteralPath $hopArchive }
 }
+
+$hopExe = Join-Path $hopBin 'hop.exe'
+$quotedHopExe = "'" + $hopExe.Replace("'", "''") + "'"
+Write-Output "& $quotedHopExe --shell-init | Out-String | Invoke-Expression"
 ```
 
-Save this bridge in `$PROFILE.CurrentUserAllHosts` and open a new PowerShell window. Run `hop config` to set up an empty installation or write the [version 5 routing files](#scoped-configuration) to register specific projects.
+Put the printed command in `$PROFILE.CurrentUserAllHosts` and open a new PowerShell window. If your profile already loads Hop from that executable, keep its existing entry. Run `hop config` to set up an empty installation or write the [version 5 routing files](#scoped-configuration) to register specific projects.
 
-```powershell
-$hopExe = Join-Path $env:USERPROFILE '.hop\bin\hop.exe'
-if (Test-Path -LiteralPath $hopExe) {
-    & $hopExe --shell-init | Out-String | Invoke-Expression
-}
-```
-
-Run `hop` for the selector, `hop list` to preview it, or `hop <project-name>` to change directory directly. Configuration and history live in `%USERPROFILE%\.hop` by default. For a custom installation, set `$hopHome` to the absolute directory you want and put that installation's `hop.exe` path in your PowerShell profile. Loading the bridge also adds its `bin` directory to the session's `PATH`. To update, close running `hop.exe` processes and repeat the ZIP installation into the existing directory.
+Run `hop` for the selector, `hop list` to preview it, or `hop <project-name>` to change directory directly. Configuration and history live in the selected home. The bridge adds the binary directory to the session's `PATH`. To update, close running `hop.exe` processes and use the same home.
 
 Without saved routing, Windows can scan ready local fixed disks. Use `hop scan --root C:/Coding` to check one workspace and `hop scan` for the configured scope. Discovery skips system and application directories, build outputs, links and inaccessible subfolders.
 
