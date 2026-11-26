@@ -3,10 +3,13 @@ set -eu
 
 repo="RoTorEx/hop"
 ref="main"
-install_dir="${HOME:-}/.toolbelt/hop"
-bin_dir="$install_dir/bin"
+install_dir="${HOP_INSTALL_DIR:-${HOME:-}/.hop}"
+if [ -z "${HOP_INSTALL_DIR:-}" ] && [ ! -e "$install_dir" ] && [ -d "${HOME:-}/.toolbelt/hop" ]; then
+    install_dir="${HOME:-}/.toolbelt/hop"
+fi
 update_profile=1
 source_dir=""
+release_archive=""
 
 usage() {
     cat <<'USAGE'
@@ -15,24 +18,25 @@ Install hop from GitHub.
 Usage:
   sh scripts/install.sh [--repo owner/name] [--ref ref] [--dir path] [--no-profile]
   sh scripts/install.sh --source path [--dir path] [--no-profile]
+  sh scripts/install.sh --archive path [--dir path] [--no-profile]
 
 Environment:
   HOP_REPO          GitHub repo, default RoTorEx/hop
   HOP_REF           branch, tag, or commit, default main
-  HOP_INSTALL_DIR   install directory, default ~/.toolbelt/hop
+  HOP_INSTALL_DIR   install directory, default ~/.hop for a new installation
   GH_INSTALLER_TOKEN   GitHub token for private repo installs
 
 The installer builds with Cargo, installs the binary under bin/, writes the
 shell bridge, and adds one source line to the active bash/zsh profile.
 
-Use --source to build from an existing local checkout instead of GitHub.
+Use --source to build from an existing local checkout or --archive to install
+a matching GitHub release tarball without Cargo. An existing ~/.toolbelt/hop
+home is reused when ~/.hop does not exist and no directory was specified.
 USAGE
 }
 
 repo="${HOP_REPO:-$repo}"
 ref="${HOP_REF:-$ref}"
-install_dir="${HOP_INSTALL_DIR:-$install_dir}"
-bin_dir="$install_dir/bin"
 installer_token="${GH_INSTALLER_TOKEN:-}"
 
 while [ "$#" -gt 0 ]; do
@@ -67,12 +71,10 @@ while [ "$#" -gt 0 ]; do
                 exit 1
             fi
             install_dir="${2:-}"
-            bin_dir="$install_dir/bin"
             shift 2
             ;;
         --dir=*)
             install_dir="${1#--dir=}"
-            bin_dir="$install_dir/bin"
             shift
             ;;
         --source)
@@ -85,6 +87,22 @@ while [ "$#" -gt 0 ]; do
             ;;
         --source=*)
             source_dir="${1#--source=}"
+            shift
+            ;;
+        --archive)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "ERROR: --archive requires a file." >&2
+                exit 1
+            fi
+            release_archive="$2"
+            shift 2
+            ;;
+        --archive=*)
+            release_archive="${1#--archive=}"
+            if [ -z "$release_archive" ]; then
+                echo "ERROR: --archive requires a file." >&2
+                exit 1
+            fi
             shift
             ;;
         --no-profile)
@@ -111,7 +129,11 @@ if [ -z "$repo" ] || [ -z "$ref" ] || [ -z "$install_dir" ]; then
     echo "ERROR: repo, ref, and install directory must not be empty." >&2
     exit 1
 fi
-if ! command -v cargo >/dev/null 2>&1; then
+if [ -n "$source_dir" ] && [ -n "$release_archive" ]; then
+    echo "ERROR: --source and --archive cannot be used together." >&2
+    exit 1
+fi
+if [ -z "$release_archive" ] && ! command -v cargo >/dev/null 2>&1; then
     echo "ERROR: cargo is required. Install Rust from https://rustup.rs and run again." >&2
     exit 1
 fi
@@ -120,12 +142,13 @@ if [ -z "$source_dir" ] && ! command -v tar >/dev/null 2>&1; then
     exit 1
 fi
 
-tmp="${TMPDIR:-/tmp}/hop-install-$$"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/hop-install.XXXXXX")"
 archive="$tmp/source.tar.gz"
-mkdir -p "$tmp"
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
-if [ -n "$source_dir" ]; then
+if [ -n "$release_archive" ]; then
+    tar -xzf "$release_archive" -C "$tmp" hop
+elif [ -n "$source_dir" ]; then
     if [ ! -f "$source_dir/Cargo.toml" ]; then
         echo "ERROR: local source does not contain Cargo.toml: $source_dir" >&2
         exit 1
@@ -164,11 +187,18 @@ else
     fi
 fi
 
-echo "Building hop"
-build_target_dir="$tmp/target"
-(cd "$source_dir" && CARGO_TARGET_DIR="$build_target_dir" cargo build --release --locked)
-build_binary="$build_target_dir/release/hop"
+if [ -n "$release_archive" ]; then
+    build_binary="$tmp/hop"
+else
+    echo "Building hop"
+    build_target_dir="$tmp/target"
+    (cd "$source_dir" && CARGO_TARGET_DIR="$build_target_dir" cargo build --release --locked)
+    build_binary="$build_target_dir/release/hop"
+fi
 
+mkdir -p "$install_dir"
+install_dir="$(CDPATH= cd -P -- "$install_dir" && pwd -P)"
+bin_dir="$install_dir/bin"
 installed_binary="$bin_dir/hop"
 legacy_binary="$install_dir/hop"
 generated_init="$tmp/init.zsh"
@@ -184,6 +214,7 @@ mv "$temporary_binary" "$installed_binary"
 cp "$generated_init" "$temporary_init"
 chmod 0644 "$temporary_init"
 mv "$temporary_init" "$install_dir/init.zsh"
+touch "$install_dir/.hop-install"
 if [ -f "$legacy_binary" ]; then
     rm -f "$legacy_binary"
 fi
@@ -214,7 +245,9 @@ legacy_bin_path_export() {
 profile_source() {
     init_file="$install_dir/init.zsh"
     escaped_init_file="$(printf '%s' "$init_file" | sed 's/[\\"$`]/\\&/g')"
-    if [ "$init_file" = "$HOME/.toolbelt/hop/init.zsh" ]; then
+    if [ "$init_file" = "$HOME/.hop/init.zsh" ]; then
+        printf 'source "$HOME/.hop/init.zsh"\n'
+    elif [ "$init_file" = "$HOME/.toolbelt/hop/init.zsh" ]; then
         printf 'source "$HOME/.toolbelt/hop/init.zsh"\n'
     else
         printf 'source "%s"\n' "$escaped_init_file"

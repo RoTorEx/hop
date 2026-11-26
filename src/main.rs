@@ -1,7 +1,6 @@
 mod usage;
 use serde_json::json;
 use std::env;
-use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -16,9 +15,9 @@ use hop::{
     Scope, Sector, active_project_paths, cli_home_path, config_path, configured_destinations,
     configured_project_paths, configured_sectors, destination_for_name, destination_names,
     discover_projects, discover_projects_with_progress, group_projects, history_path,
-    load_jump_history, load_project_config, load_routing, merge_project_config, name_jump_history,
-    parse_choice, rank_projects_by_jumps, record_jump, refresh_project_config, routing_path,
-    section_destinations, write_project_config,
+    installation_home, load_jump_history, load_project_config, load_routing, merge_project_config,
+    name_jump_history, parse_choice, rank_projects_by_jumps, record_jump, refresh_project_config,
+    routing_path, section_destinations, write_project_config,
 };
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -70,11 +69,19 @@ struct Options {
 }
 
 fn main() -> ExitCode {
+    let options = match parse_args(env::args().skip(1)) {
+        Ok(options) => options,
+        Err(message) => return fail(&message, colors_enabled()),
+    };
+    if options.command == Command::ShellInit {
+        return run_cli(options);
+    }
+
     if let Ok(home) = home_dir() {
         usage::init("hop", cli_home_path(&home).join("logs/events.jsonl"));
     }
     let operation = usage::Operation::start("command");
-    let result = run_cli();
+    let result = run_cli(options);
     operation.finish(
         if result == ExitCode::SUCCESS {
             "success"
@@ -85,12 +92,7 @@ fn main() -> ExitCode {
     );
     result
 }
-fn run_cli() -> ExitCode {
-    let options = match parse_args(env::args().skip(1)) {
-        Ok(options) => options,
-        Err(message) => return fail(&message, colors_enabled()),
-    };
-
+fn run_cli(options: Options) -> ExitCode {
     usage::event(
         "command_selected",
         "started",
@@ -1074,6 +1076,7 @@ fn release_asset_name_for(os: &str, arch: &str) -> Option<&'static str> {
     match (os, arch) {
         ("linux", "x86_64") => Some("hop-linux-x86_64.tar.gz"),
         ("linux", "aarch64") => Some("hop-linux-aarch64.tar.gz"),
+        ("linux", "arm") => Some("hop-linux-armv7.tar.gz"),
         ("macos", "x86_64") => Some("hop-macos-x86_64.tar.gz"),
         ("macos", "aarch64") => Some("hop-macos-aarch64.tar.gz"),
         _ => None,
@@ -1717,9 +1720,17 @@ fn powershell_quote(value: &str) -> String {
 }
 
 fn powershell_init(binary: &Path) -> String {
+    let binary_dir = binary.parent().unwrap_or_else(|| Path::new("."));
+    let binary_dir = powershell_quote(&binary_dir.display().to_string());
     let binary = powershell_quote(&binary.display().to_string());
     format!(
         r#"# x-cli-hop PowerShell bridge
+& {{
+    $hopBinDir = {binary_dir}
+    if (($env:Path -split ';') -notcontains $hopBinDir) {{
+        $env:Path = "$hopBinDir;$env:Path"
+    }}
+}}
 function global:hop {{
     $previousEncoding = [Console]::OutputEncoding
     try {{
@@ -1795,15 +1806,6 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
-fn installation_home(binary: &Path) -> Option<&Path> {
-    let parent = binary.parent()?;
-    if parent.file_name() == Some(OsStr::new("bin")) {
-        parent.parent()
-    } else {
-        Some(parent)
-    }
-}
-
 fn shell_activation_command() -> String {
     if cfg!(windows) {
         return env::current_exe().map_or_else(
@@ -1819,8 +1821,14 @@ fn shell_activation_command() -> String {
     env::current_exe()
         .ok()
         .and_then(|binary| installation_home(&binary).map(|home| home.join("init.zsh")))
+        .filter(|init| init.is_file())
+        .or_else(|| {
+            home_dir()
+                .ok()
+                .map(|home| cli_home_path(&home).join("init.zsh"))
+        })
         .map_or_else(
-            || ". \"$HOME/.toolbelt/hop/init.zsh\"".to_owned(),
+            || ". \"$HOME/.hop/init.zsh\"".to_owned(),
             |init| format!(". {}", shell_quote(&init.display().to_string())),
         )
 }
@@ -1892,11 +1900,11 @@ mod tests {
 
         assert_eq!(
             cli_home_shortcut_path_for_home("~", &home),
-            Some(PathBuf::from("/home/alex/.toolbelt/hop"))
+            Some(PathBuf::from("/home/alex/.hop"))
         );
         assert_eq!(
             cli_home_shortcut_path_for_home("/home/alex", &home),
-            Some(PathBuf::from("/home/alex/.toolbelt/hop"))
+            Some(PathBuf::from("/home/alex/.hop"))
         );
         assert_eq!(cli_home_shortcut_path_for_home("A1", &home), None);
     }
@@ -2162,6 +2170,10 @@ mod tests {
         assert_eq!(
             release_asset_name_for("linux", "aarch64"),
             Some("hop-linux-aarch64.tar.gz")
+        );
+        assert_eq!(
+            release_asset_name_for("linux", "arm"),
+            Some("hop-linux-armv7.tar.gz")
         );
         assert_eq!(
             release_asset_name_for("macos", "x86_64"),

@@ -5,7 +5,9 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 pub const APP_NAME: &str = "hop";
-pub const CONFIG_DIR_NAME: &str = ".toolbelt/hop";
+pub const CONFIG_DIR_NAME: &str = ".hop";
+const LEGACY_CONFIG_DIR_NAME: &str = ".toolbelt/hop";
+const INSTALL_MARKER: &str = ".hop-install";
 pub const CONFIG_FILE_NAME: &str = "config.toml";
 pub const HISTORY_FILE_NAME: &str = "history.toml";
 
@@ -197,7 +199,42 @@ pub fn discover_projects_with_progress(
 
 #[must_use]
 pub fn cli_home_path(home: &Path) -> PathBuf {
-    home.join(CONFIG_DIR_NAME)
+    let binary = std::env::current_exe().ok();
+    resolve_cli_home(home, binary.as_deref())
+}
+
+fn resolve_cli_home(home: &Path, binary: Option<&Path>) -> PathBuf {
+    let default_home = home.join(CONFIG_DIR_NAME);
+    let legacy_home = home.join(LEGACY_CONFIG_DIR_NAME);
+
+    if let Some(install_home) = binary.and_then(installation_home) {
+        for conventional_home in [&default_home, &legacy_home] {
+            if install_home == conventional_home
+                || fs::canonicalize(conventional_home).is_ok_and(|path| path == install_home)
+            {
+                return conventional_home.to_path_buf();
+            }
+        }
+        if install_home.join(INSTALL_MARKER).is_file() {
+            return install_home.to_path_buf();
+        }
+    }
+
+    if !default_home.exists() && legacy_home.is_dir() {
+        legacy_home
+    } else {
+        default_home
+    }
+}
+
+#[must_use]
+pub fn installation_home(binary: &Path) -> Option<&Path> {
+    let parent = binary.parent()?;
+    if parent.file_name().is_some_and(|name| name == "bin") {
+        parent.parent()
+    } else {
+        Some(parent)
+    }
 }
 
 #[must_use]

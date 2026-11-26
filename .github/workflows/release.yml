@@ -16,6 +16,8 @@ jobs:
     name: Build ${{ matrix.name }} release binary
     env:
       CARGO_TARGET_DIR: target
+      CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+      CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_RUNNER: qemu-arm -L /usr/arm-linux-gnueabihf
     defaults:
       run:
         shell: bash
@@ -31,6 +33,10 @@ jobs:
             os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
             archive: hop-linux-aarch64.tar.gz
+          - name: Linux ARMv7
+            os: ubuntu-22.04
+            target: armv7-unknown-linux-gnueabihf
+            archive: hop-linux-armv7.tar.gz
           - name: macOS x86_64
             os: macos-15-intel
             target: x86_64-apple-darwin
@@ -57,8 +63,21 @@ jobs:
           rustup default stable
           rustup target add "${{ matrix.target }}"
 
-      - name: Test native targets
-        run: cargo test --locked --all-targets --target "${{ matrix.target }}"
+      - name: Install ARMv7 cross compiler and user-mode emulator
+        if: matrix.target == 'armv7-unknown-linux-gnueabihf'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user
+
+      - name: Test target
+        run: |
+          if [ "${{ matrix.target }}" = armv7-unknown-linux-gnueabihf ]; then
+            # The emulator runs the test processes. Integration tests also spawn
+            # the target binary, so run those on the native targets below.
+            cargo test --locked --lib --bin hop --target "${{ matrix.target }}"
+          else
+            cargo test --locked --all-targets --target "${{ matrix.target }}"
+          fi
 
       - name: Build
         run: cargo build --release --locked --target "${{ matrix.target }}"
@@ -92,7 +111,12 @@ jobs:
           extracted=$(mktemp -d)
           trap 'rm -rf "$extracted"' EXIT
           tar -xzf "${{ matrix.archive }}" -C "$extracted"
-          "$extracted/hop" --version --no-color
+          export HOME="$extracted"
+          if [ "${{ matrix.target }}" = armv7-unknown-linux-gnueabihf ]; then
+            $CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_RUNNER "$extracted/hop" --version --no-color
+          else
+            "$extracted/hop" --version --no-color
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
@@ -116,12 +140,37 @@ jobs:
       - name: Verify the complete set of release archives
         run: |
           set -eu
-          for asset in hop-linux-x86_64.tar.gz hop-linux-aarch64.tar.gz \
+          for asset in hop-linux-x86_64.tar.gz hop-linux-aarch64.tar.gz hop-linux-armv7.tar.gz \
                        hop-macos-x86_64.tar.gz hop-macos-aarch64.tar.gz hop-windows-x86_64.zip; do
             test -s "dist/$asset"
           done
-          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 5
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 6
           sha256sum dist/*
+
+      - name: Checkout the release changelog
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: release-source
+          persist-credentials: false
+
+      - name: Read changelog notes
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
+            version=Unreleased
+          fi
+          awk -v version="$version" '
+            /^## / {
+              if (section) exit
+              section = index($0, "## [" version "]") == 1
+              next
+            }
+            section { print }
+          ' release-source/CHANGELOG.md > release-notes.md
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            grep -q '[^[:space:]]' release-notes.md
+          fi
 
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -132,7 +181,8 @@ jobs:
           if draft=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null); then
             if [ "$draft" = true ]; then
               gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
-              gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+              gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+                --draft=false --notes-file release-notes.md
             else
               published=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort)
               expected=$(basename -a dist/* | sort)
@@ -140,5 +190,5 @@ jobs:
             fi
           else
             gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
-              --verify-tag --title "$GITHUB_REF_NAME" --notes "hop $GITHUB_REF_NAME"
+              --verify-tag --title "$GITHUB_REF_NAME" --notes-file release-notes.md
           fi

@@ -23,7 +23,7 @@ Build and install the current checkout on this machine:
 make install-local
 ```
 
-Install from GitHub on a VM/VPS:
+Build and install from GitHub on a machine with Cargo:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RoTorEx/hop/main/scripts/install.sh | sh
@@ -42,18 +42,32 @@ Pin a release or branch:
 curl -fsSL https://raw.githubusercontent.com/RoTorEx/hop/main/scripts/install.sh | sh -s -- --ref vX.Y.Z
 ```
 
-The installer builds with Cargo, copies the binary to
-`~/.toolbelt/hop/bin/hop`, writes the shell bridge to
-`~/.toolbelt/hop/init.zsh`, stores a supplied private repo update token at
-`~/.toolbelt/hop/gh-token` with file mode `0600`, and adds one plain line to the
+For a fresh installation the installer copies the binary to
+`~/.hop/bin/hop`, writes the shell bridge to
+`~/.hop/init.zsh`, stores a supplied private repo update token at
+`~/.hop/gh-token` with file mode `0600`, and adds one plain line to the
 active bash/zsh profile:
 
 ```bash
-source "$HOME/.toolbelt/hop/init.zsh"
+source "$HOME/.hop/init.zsh"
 ```
 
+Choose another home with `--dir` or set `HOP_INSTALL_DIR` for the installer.
+`--dir` takes precedence. An existing `~/.toolbelt/hop` is reused when no
+directory is specified and `~/.hop` is absent.
+
+```bash
+./scripts/install.sh --source "$PWD" --dir "$HOME/.toolbelt/hop"
+```
+
+Hop keeps its routing, history and local usage logs in the selected home.
+For an older custom installation that used a separate home for its settings,
+use `hop update` for an in-place upgrade. Reinstalling with `--dir` associates
+the binary with that directory, so put the routing and history you want to
+use there before switching.
+
 The bridge is required because a child process cannot change its parent shell's
-working directory. It adds `~/.toolbelt/hop/bin` to PATH without duplicates,
+working directory. It adds `~/.hop/bin` to PATH without duplicates,
 delegates all argument parsing to the Rust CLI, uses the absolute installed
 binary path, validates the selected directory, and contains the only `cd`
 needed by the integration. `hop update` refreshes both the binary and this
@@ -74,13 +88,15 @@ hop --copy-path A1
 The [latest GitHub release](https://github.com/RoTorEx/hop/releases/latest) includes the `hop-windows-x86_64.zip` archive for 64-bit Windows. The archive contains `hop.exe`. Run the following in Windows PowerShell 5.1 or PowerShell 7.
 
 ```powershell
-$hopBin = Join-Path $env:USERPROFILE '.toolbelt\hop\bin'
+$hopHome = Join-Path $env:USERPROFILE '.hop'
+$hopBin = Join-Path $hopHome 'bin'
 $hopArchive = Join-Path ([IO.Path]::GetTempPath()) ('hop-' + [guid]::NewGuid() + '.zip')
 $hopUrl = 'https://github.com/RoTorEx/hop/releases/latest/download/hop-windows-x86_64.zip'
 New-Item -ItemType Directory -Path $hopBin -Force | Out-Null
 try {
     Invoke-WebRequest -UseBasicParsing -Uri $hopUrl -OutFile $hopArchive
     Expand-Archive -LiteralPath $hopArchive -DestinationPath $hopBin -Force
+    New-Item -ItemType File -Path (Join-Path $hopHome '.hop-install') -Force | Out-Null
 } finally {
     if (Test-Path -LiteralPath $hopArchive) { Remove-Item -LiteralPath $hopArchive }
 }
@@ -89,13 +105,13 @@ try {
 Save this bridge in `$PROFILE.CurrentUserAllHosts` and open a new PowerShell window. Run `hop config` to set up an empty installation or write the [version 5 routing files](#scoped-configuration) to register specific projects.
 
 ```powershell
-$hopExe = Join-Path $env:USERPROFILE '.toolbelt\hop\bin\hop.exe'
+$hopExe = Join-Path $env:USERPROFILE '.hop\bin\hop.exe'
 if (Test-Path -LiteralPath $hopExe) {
     & $hopExe --shell-init | Out-String | Invoke-Expression
 }
 ```
 
-Run `hop` for the selector, `hop list` to preview it, or `hop <project-name>` to change directory directly. Configuration and history live in `%USERPROFILE%\.toolbelt\hop`. Copy mode uses `Set-Clipboard`. To update, close running `hop.exe` processes and repeat the ZIP installation.
+Run `hop` for the selector, `hop list` to preview it, or `hop <project-name>` to change directory directly. Configuration and history live in `%USERPROFILE%\.hop` by default. For a custom installation, set `$hopHome` to the absolute directory you want and put that installation's `hop.exe` path in your PowerShell profile. Loading the bridge also adds its `bin` directory to the session's `PATH`. To update, close running `hop.exe` processes and repeat the ZIP installation into the existing directory.
 
 Without saved routing, Windows can scan ready local fixed disks. Use `hop scan --root C:/Coding` to check one workspace and `hop scan` for the configured scope. Discovery skips system and application directories, build outputs, links and inaccessible subfolders.
 
@@ -112,23 +128,21 @@ cargo build --release --locked
 ## Linux
 
 The [latest GitHub release](https://github.com/RoTorEx/hop/releases/latest)
-includes native `hop-linux-x86_64.tar.gz` and `hop-linux-aarch64.tar.gz` archives
-built on Ubuntu 22.04. An existing installation can fetch the matching archive
-with `hop update`.
+provides archives for x86_64, aarch64 and ARMv7 (32-bit `armhf`). Check your
+system architecture before picking an archive. Existing installations can
+fetch the matching archive with `hop update`.
 
-For a first installation from an archive, download the one for your CPU and
-extract `hop` into the Toolbelt bin directory. This example uses x86_64.
+On x86_64, download the archive and pass it to the installer. For a Raspberry
+Pi running a 32-bit ARMv7 system, use `hop-linux-armv7.tar.gz` in both commands.
 
 ```bash
-hop_home="$HOME/.toolbelt/hop"
-mkdir -p "$hop_home/bin"
-tar -xzf hop-linux-x86_64.tar.gz -C "$hop_home/bin" hop
-"$hop_home/bin/hop" --shell-init > "$hop_home/init.zsh"
+curl -fsSLO https://github.com/RoTorEx/hop/releases/latest/download/hop-linux-x86_64.tar.gz
+curl -fsSLo hop-install.sh https://raw.githubusercontent.com/RoTorEx/hop/main/scripts/install.sh
+sh hop-install.sh --archive hop-linux-x86_64.tar.gz
 ```
 
-Add `source "$HOME/.toolbelt/hop/init.zsh"` to your bash or zsh profile and
-open a new shell. Use the installer in [Quickstart](#quickstart) to build from
-source.
+`--archive` installs the packaged binary without Cargo and adds the shell
+bridge. Open a new shell to use `hop`, or source the printed bridge path.
 
 ## Usage
 
@@ -163,7 +177,7 @@ stdout and copies the selected path with `pbcopy`, `wl-copy`, `xclip`, or `xsel`
 interactive prompt. Add `--frequent` to print the same ranked view as
 `hop --frequent`. List mode does not select a project or change directories.
 
-`hop ~` jumps directly to the hop home directory, `~/.toolbelt/hop`.
+`hop ~` jumps to the active Hop home, `~/.hop` by default.
 
 `hop --frequent` shows all available configured projects in one list, ordered by the number
 of successful jumps. This view uses numeric selectors, so `hop --frequent 1`
@@ -171,7 +185,7 @@ jumps to the current most-used project. Equal counts fall back to alphanumeric
 path order. Copying a path and failed directory changes do not increase the
 count.
 
-Jump counts are kept locally in `~/.toolbelt/hop/history.toml`, separately from
+Jump counts are kept locally in `~/.hop/history.toml`, separately from
 the manually editable project config. The installed shell bridge records a jump
 only after it changes directory successfully. `hop stats` prints the total and
 per-destination counts, including past destinations that are no longer available.
@@ -179,7 +193,7 @@ per-destination counts, including past destinations that are no longer available
 Every destination has a name, and `hop <name>` jumps to it from any scope:
 `hop voxray`, or `hop Aveni/ai-workspace` when a folder name is shared. A script
 or an agent resolves a project the same way without the shell bridge:
-`~/.toolbelt/hop/bin/hop voxray` prints the path. The lookup keeps working after
+`~/.hop/bin/hop voxray` prints the path. The lookup keeps working after
 the project moves, because the name does not change. Text shaped like a selector
 (`A1`) is always a selector.
 
@@ -206,8 +220,8 @@ the saved config and checks registered paths without recursively scanning.
 
 ### Scoped configuration
 
-Save Personal destinations in `~/.toolbelt/hop/routing/personal.toml` and Work
-destinations in `~/.toolbelt/hop/routing/work.toml`. Both files use version 5.
+Save Personal destinations in `~/.hop/routing/personal.toml` and Work
+destinations in `~/.hop/routing/work.toml`. Both files use version 5.
 Use a file containing only `version = 5` for an empty scope. The filename
 determines scope. An optional `routing/archive.toml` in the same format defines
 the Archive scope for retired material; without the file that scope is empty. Shared scan settings live in the optional `config.toml`
@@ -278,9 +292,9 @@ for version 1–4 configs. To migrate, split sections between the two routing
 files, consolidate overlapping destinations, and keep shared discovery
 settings in `config.toml`. Routing files take precedence for destinations.
 
-`hop update` replaces `~/.toolbelt/hop/bin/hop` and refreshes `init.zsh`
-from the latest Linux or macOS release for the current CPU architecture. It
-requires `curl` or `wget`, plus `tar`. If `~/.toolbelt/hop/gh-token` exists,
+`hop update` replaces the current executable and refreshes its `init.zsh`
+from the latest Linux or macOS release for its architecture. It requires
+`curl` or `wget`, plus `tar`. If the installation contains `gh-token`,
 updates use that token for GitHub authentication.
 
 ## Release Flow
@@ -303,13 +317,13 @@ make release-push
 updates release metadata, creates a dedicated release commit, and creates a
 `vX.Y.Z` tag. `make release-push` pushes `main` and tags.
 
-Pushing a `vX.Y.Z` tag publishes the complete archive set after all builds
-and tests pass. The set contains Linux and macOS for x86_64 and aarch64 and
-Windows for x86_64. Pushes to `main`, pull requests, and manual workflow
-runs assemble the same archives for verification. Each target runs native
-Rust tests. Linux runs the executable from its archive. Windows checks
-scoped navigation, directory changes and history in Windows PowerShell 5.1
-and PowerShell 7.
+Pushing a `vX.Y.Z` tag publishes the archives with the version's notes from
+[CHANGELOG.md](CHANGELOG.md). Linux packages cover x86_64, aarch64 and ARMv7.
+macOS covers x86_64 and aarch64, and Windows covers x86_64. Pushes to `main`,
+pull requests and manual workflow runs assemble the same archives. CI runs
+native tests for x86_64 and aarch64 and emulated tests for ARMv7, including a
+smoke test of the Linux executables from their archives. Windows verifies
+scoped navigation, directory changes and history in PowerShell 5.1 and 7.
 
 ## Kernel sync (sanity check)
 

@@ -25,7 +25,11 @@ impl Workspace {
     }
 
     fn run(&self, args: &[&str]) -> std::process::Output {
-        Command::new(env!("CARGO_BIN_EXE_hop"))
+        self.run_binary(Path::new(env!("CARGO_BIN_EXE_hop")), args)
+    }
+
+    fn run_binary(&self, binary: &Path, args: &[&str]) -> std::process::Output {
+        Command::new(binary)
             .args(args)
             .current_dir(&self.0)
             .env("HOME", &self.0)
@@ -86,6 +90,95 @@ fn projects_are_discovered_only_on_explicit_config_refresh() {
 }
 
 #[test]
+fn installed_binaries_keep_routing_history_and_usage_in_their_own_home() {
+    let workspace = Workspace::new();
+    let default_home = workspace.0.join(".hop");
+    let legacy_home = workspace.0.join(".toolbelt/hop");
+    let custom_home = workspace.0.join("alex's Tool Belt/hop");
+
+    fs::create_dir_all(&legacy_home).unwrap();
+    let output = workspace.run(&["~"]);
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim_end(),
+        legacy_home.to_string_lossy()
+    );
+    assert!(!default_home.exists());
+
+    fs::create_dir_all(&custom_home).unwrap();
+    fs::write(custom_home.join(".hop-install"), "").unwrap();
+    let homes = [
+        (&default_home, "default-project"),
+        (&legacy_home, "legacy-project"),
+        (&custom_home, "custom-project"),
+    ];
+    let mut binaries = Vec::new();
+
+    for (index, (home, name)) in homes.iter().enumerate() {
+        let binary = home
+            .join(if index == 1 { "" } else { "bin" })
+            .join(format!("hop{}", std::env::consts::EXE_SUFFIX));
+        fs::create_dir_all(binary.parent().unwrap()).unwrap();
+        fs::copy(env!("CARGO_BIN_EXE_hop"), &binary).unwrap();
+
+        let project_root = workspace.0.join(name);
+        fs::create_dir_all(project_root.join(".git")).unwrap();
+        let config = workspace.run_binary(
+            &binary,
+            &[
+                "config",
+                "--root",
+                project_root.parent().unwrap().to_str().unwrap(),
+            ],
+        );
+        assert!(config.status.success(), "{config:?}");
+        assert!(home.join("config.toml").is_file());
+
+        #[cfg(windows)]
+        let toml_root = workspace.0.to_str().unwrap().replace('\\', "/");
+        #[cfg(not(windows))]
+        let toml_root = workspace.0.to_string_lossy();
+        let routing = home.join("routing");
+        fs::create_dir(&routing).unwrap();
+        fs::write(routing.join("work.toml"), "version = 5\n").unwrap();
+        fs::write(
+            routing.join("personal.toml"),
+            format!("version = 5\n[[sections]]\nroot = {toml_root:?}\nitems = [\"{name}\"]\n"),
+        )
+        .unwrap();
+        let jump = workspace.run_binary(&binary, &[name]);
+        assert!(jump.status.success(), "{jump:?}");
+        let selected = PathBuf::from(String::from_utf8(jump.stdout).unwrap().trim_end());
+        assert_eq!(
+            fs::canonicalize(selected).unwrap(),
+            fs::canonicalize(&project_root).unwrap()
+        );
+
+        let record =
+            workspace.run_binary(&binary, &["--record-jump", project_root.to_str().unwrap()]);
+        assert!(record.status.success(), "{record:?}");
+        let effective = workspace.run_binary(&binary, &["~"]);
+        let effective = PathBuf::from(String::from_utf8(effective.stdout).unwrap().trim_end());
+        assert_eq!(
+            fs::canonicalize(effective).unwrap(),
+            fs::canonicalize(home).unwrap()
+        );
+        binaries.push(binary);
+    }
+
+    for ((home, name), binary) in homes.into_iter().zip(binaries) {
+        let list = workspace.run_binary(&binary, &["list"]);
+        assert!(list.status.success(), "{list:?}");
+        let display = String::from_utf8(list.stderr).unwrap();
+        assert!(display.contains(name), "{display}");
+        let history = fs::read_to_string(home.join("history.toml")).unwrap();
+        assert_eq!(history.matches("jumps = 1").count(), 1, "{history}");
+        assert!(history.contains(name), "{history}");
+        assert!(home.join("logs/events.jsonl").is_file());
+    }
+}
+
+#[test]
 fn navigation_cannot_request_a_recursive_scan() {
     let workspace = Workspace::new();
     for args in [vec!["--root", "."], vec!["list", "--root=."]] {
@@ -120,7 +213,7 @@ fn stats_use_recorded_jumps_and_retained_search_events() {
     // History remains visible after a project disappears.
     fs::remove_dir_all(&destination).unwrap();
 
-    let logs = workspace.0.join(".toolbelt/hop/logs");
+    let logs = workspace.0.join(".hop/logs");
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -176,7 +269,7 @@ fn scopes_use_saved_membership_and_scan_reports_only() {
 
     fs::create_dir_all(projects.join("dev-tools/departed")).unwrap();
 
-    let config_dir = workspace.0.join(".toolbelt/hop");
+    let config_dir = workspace.0.join(".hop");
     fs::create_dir_all(&config_dir).unwrap();
     let config_path = config_dir.join("config.toml");
     let config = format!(
@@ -298,7 +391,7 @@ items = ["repo"]
 #[test]
 fn routing_files_define_scopes_and_share_validation() {
     let workspace = Workspace::new();
-    let config = workspace.0.join(".toolbelt/hop/config.toml");
+    let config = workspace.0.join(".hop/config.toml");
     let routing = config.with_file_name("routing");
     fs::create_dir_all(&routing).unwrap();
     let personal = workspace.0.join("personal");
@@ -364,7 +457,7 @@ fn routing_files_define_scopes_and_share_validation() {
 #[test]
 fn archive_scope_is_optional_and_counts_follow_a_moved_destination() {
     let workspace = Workspace::new();
-    let routing = workspace.0.join(".toolbelt/hop/routing");
+    let routing = workspace.0.join(".hop/routing");
     fs::create_dir_all(&routing).unwrap();
     let old_group = workspace.0.join("tools");
     let new_group = workspace.0.join("dev-tools");
@@ -435,7 +528,7 @@ fn archive_scope_is_optional_and_counts_follow_a_moved_destination() {
         String::from_utf8_lossy(&frequent.stderr).contains("3 jumps"),
         "{frequent:?}"
     );
-    let history = fs::read_to_string(workspace.0.join(".toolbelt/hop/history.toml")).unwrap();
+    let history = fs::read_to_string(workspace.0.join(".hop/history.toml")).unwrap();
     assert!(history.contains("version = 2"), "{history}");
     assert_eq!(history.matches("[[projects]]").count(), 1, "{history}");
 }

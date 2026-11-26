@@ -53,11 +53,13 @@ change to its shell integration.
 - `src/main.rs` — CLI routing, terminal rendering, and shell integration.
 - `docs/architecture/overview.md` — technical flow and system boundaries.
 
-## Toolbelt installation
+## Installation and local state
 
-The default installation, configuration and jump history live together under
-`~/.toolbelt/hop`. Discovery includes nested Git repositories and skips symbolic
-links and dependency/build directories. Each discovered path is listed once.
+The executable, configuration and jump history live together under `~/.hop`
+on a new installation. Users can choose another home, such as
+`~/.toolbelt/hop`, and a supported shell bridge adds its binary directory to
+`PATH`. Discovery includes nested Git repositories and skips symbolic links
+and dependency/build directories. Each discovered path is listed once.
 The normal list keeps root selector `0` implicit; it adds no Root row.
 
 ## Local product usage evidence

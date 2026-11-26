@@ -91,7 +91,7 @@ does not increment for `--copy-path`, raw executable selection without shell
 integration, failed directory changes, or `hop ~`.
 
 Counts are stored separately from the user-edited project config in
-`~/.toolbelt/hop/history.toml`. The file is local state, is written with owner-only
+the active Hop home's `history.toml`. The file is local state, is written with owner-only
 permissions on Unix, and is replaced atomically so an interrupted write does
 not leave a partial history. Missing history means every project has zero
 jumps. Invalid or unsupported history is reported rather than overwritten.
