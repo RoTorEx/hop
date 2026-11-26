@@ -1,5 +1,10 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{fs, path::PathBuf, process::Command, time::SystemTime};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+    time::SystemTime,
+};
 
 struct Workspace(PathBuf);
 
@@ -217,10 +222,8 @@ items = ["repo"]
     let selected = |args: &[&str], directory| {
         let output = workspace.run(args);
         assert!(output.status.success(), "{output:?}");
-        assert_eq!(
-            String::from_utf8(output.stdout).unwrap().trim(),
-            projects.join(directory).to_str().unwrap()
-        );
+        let selected_path = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(Path::new(selected_path.trim()), projects.join(directory));
     };
     selected(&["B0"], "dev-tools/services");
     selected(&["A0", "--scope", "work"], "company");
