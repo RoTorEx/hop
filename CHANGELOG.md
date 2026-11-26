@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-26
+
 - Publish Windows x86_64 release ZIPs alongside the macOS archives. Verify directory jumps, scoped routing, and history on both Windows PowerShell 5.1 and PowerShell 7.
 
 ## [0.5.0] - 2026-11-23
