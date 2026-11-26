@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-26
+
 - Use `~/.hop` for new installations and keep existing Tool Belt installations usable. Custom homes keep their own routing, history, and logs.
 - Install Unix release archives without Cargo. Add the selected binary directory to PowerShell's session PATH.
 - Publish and update from Linux ARMv7 archives for 32-bit Raspberry Pi systems. Publish GitHub release notes from the changelog.
