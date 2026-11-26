@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-26
+
 - Publish native Linux x86_64 and aarch64 archives for installation and `hop update`.
 - Publish the complete set of Linux, macOS and Windows archives after verifying every build.
 
