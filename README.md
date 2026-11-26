@@ -69,71 +69,47 @@ hop b1
 hop --copy-path A1
 ```
 
-## Other platforms and previous Windows releases
+## Windows
 
-CI and future release assets target macOS only (Apple Silicon and Intel), using
-GitHub-hosted macOS runners. Linux/Windows source and existing release assets are
-retained, but no new Linux/Windows binaries are built. Linux users must update
-from source with the installer; `hop update` expects a release asset and will not
-find one for Linux in future macOS-only releases. The Windows download commands
-below apply only to older tags containing a Windows asset; use a specific such
-tag instead of `latest`, or build from source.
-
-Earlier releases include `hop-windows-x86_64.zip` containing `hop.exe`. Download it
-from [GitHub Releases](https://github.com/RoTorEx/hop/releases/latest), or run
-these commands in PowerShell once a Windows release is published:
+The [latest GitHub release](https://github.com/RoTorEx/hop/releases/latest) includes the `hop-windows-x86_64.zip` archive for 64-bit Windows. The archive contains `hop.exe`. Run the following in Windows PowerShell 5.1 or PowerShell 7.
 
 ```powershell
-$hopBin = Join-Path $env:USERPROFILE '.toolbelt/hop\bin'
+$hopBin = Join-Path $env:USERPROFILE '.toolbelt\hop\bin'
+$hopArchive = Join-Path ([IO.Path]::GetTempPath()) ('hop-' + [guid]::NewGuid() + '.zip')
+$hopUrl = 'https://github.com/RoTorEx/hop/releases/latest/download/hop-windows-x86_64.zip'
 New-Item -ItemType Directory -Path $hopBin -Force | Out-Null
-$hopArchive = Join-Path $env:TEMP 'hop-windows-x86_64.zip'
-Invoke-WebRequest 'https://github.com/RoTorEx/hop/releases/download/v0.3.19/hop-windows-x86_64.zip' -OutFile $hopArchive
-Expand-Archive -LiteralPath $hopArchive -DestinationPath $hopBin -Force
-Remove-Item -LiteralPath $hopArchive
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-& "$hopBin\hop.exe" --shell-init | Out-String | Invoke-Expression
-hop config
-hop
+try {
+    Invoke-WebRequest -UseBasicParsing -Uri $hopUrl -OutFile $hopArchive
+    Expand-Archive -LiteralPath $hopArchive -DestinationPath $hopBin -Force
+} finally {
+    if (Test-Path -LiteralPath $hopArchive) { Remove-Item -LiteralPath $hopArchive }
+}
 ```
 
-To enable directory changes in every PowerShell session, add these lines to
-`$PROFILE` (create the profile if needed):
+Save this bridge in `$PROFILE.CurrentUserAllHosts` and open a new PowerShell window. Run `hop config` to set up an empty installation or write the [version 5 routing files](#scoped-configuration) to register specific projects.
 
 ```powershell
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-& "$env:USERPROFILE\.toolbelt/hop\bin\hop.exe" --shell-init | Out-String | Invoke-Expression
+$hopExe = Join-Path $env:USERPROFILE '.toolbelt\hop\bin\hop.exe'
+if (Test-Path -LiteralPath $hopExe) {
+    & $hopExe --shell-init | Out-String | Invoke-Expression
+}
 ```
 
-On Windows, plain `hop config` automatically scans every ready local fixed disk
-(`C:\`, `D:\`, and so on) and combines the projects into one list. There is no
-need to enter drive letters. It shows which disk is being scanned and skips
-system/application folders (`Windows`, `Program Files`, `ProgramData`, `AppData`,
-Recycle Bin, recovery data), build outputs, links, and inaccessible subfolders.
-Mapped network drives, removable media, and disks that are not ready are excluded.
-For a deliberately limited scan, `hop config --root D:\Projects` still works.
+Run `hop` for the selector, `hop list` to preview it, or `hop <project-name>` to change directory directly. Configuration and history live in `%USERPROFILE%\.toolbelt\hop`. Copy mode uses `Set-Clipboard`. To update, close running `hop.exe` processes and repeat the ZIP installation.
 
-For every scan scope, ordinary `hop` uses the saved list and checks only whether
-known projects are available. Recursive discovery runs only through `hop config`.
-Existing version 1–3 configs remain readable and `hop config` migrates them to
-explicit sections. Running `hop config` again scans for newly created projects;
-add paths to `excluded` to keep deliberate omissions hidden.
-
-Windows PowerShell 5.1 and PowerShell 7 are supported. Configuration and history
-live under `%USERPROFILE%\.toolbelt/hop`; copy mode uses `Set-Clipboard`.
-The raw executable also works from CMD, but directory changes require the
-PowerShell bridge. To update on Windows, repeat the download/extract commands
-when `hop.exe` has exited; `hop update` remains Linux/macOS-only.
+Without saved routing, Windows can scan ready local fixed disks. Use `hop scan --root C:/Coding` to check one workspace and `hop scan` for the configured scope. Discovery skips system and application directories, build outputs, links and inaccessible subfolders.
 
 To build from source on Windows, install Rust with the MSVC toolchain and
-Visual Studio C++ Build Tools, then run in PowerShell:
+Visual Studio C++ Build Tools. Run the native build and the PowerShell smoke test.
 
 ```powershell
 $env:CARGO_TARGET_DIR = Join-Path $env:USERPROFILE 'construction_side\hop\target'
 cargo test --locked --all-targets
 cargo build --release --locked
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-& "$env:CARGO_TARGET_DIR\release\hop.exe" --shell-init | Out-String | Invoke-Expression
+.\scripts\test-windows.ps1 -Binary "$env:CARGO_TARGET_DIR\release\hop.exe"
 ```
+
+Linux users can install from source with the Unix installer.
 
 ## Usage
 
@@ -308,11 +284,11 @@ make release-push
 updates release metadata, creates a dedicated release commit, and creates a
 `vX.Y.Z` tag. `make release-push` pushes `main` and tags.
 
-Pushing a `vX.Y.Z` tag triggers the GitHub Actions workflow that builds and
-attaches macOS x86_64 and aarch64 release binaries. Pushes to `main`, pull
-requests, and manual workflow runs build the
-same artifacts without publishing a release. Native targets run Rust tests;
-Windows also checks directory changes and history in PowerShell 5.1 and 7.
+Pushing a `vX.Y.Z` tag builds and attaches Windows x86_64 and macOS x86_64
+and aarch64 release binaries. Pushes to `main`, pull requests, and manual
+workflow runs build the same artifacts for verification. Each target runs
+native Rust tests. Windows also checks scoped navigation, directory changes
+and history in Windows PowerShell 5.1 and PowerShell 7.
 
 ## Kernel sync (sanity check)
 

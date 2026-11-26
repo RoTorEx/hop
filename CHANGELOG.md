@@ -4,6 +4,8 @@ Tracks real product and release progress.
 
 ## [Unreleased]
 
+- Publish Windows x86_64 release ZIPs alongside the macOS archives. Verify directory jumps, scoped routing, and history on both Windows PowerShell 5.1 and PowerShell 7.
+
 ## [0.5.0] - 2026-11-23
 
 - Key jump history by destination name so counts and the frequent view survive moving a project; path-keyed history converts on the next recorded jump and merges counts from earlier layouts. `hop stats` shows the name and last path.

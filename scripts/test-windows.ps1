@@ -42,6 +42,36 @@ try {
     if ((Get-Content -LiteralPath (Join-Path $testRoot '.toolbelt/hop\history.toml') -Raw) -ne $history) {
         throw 'Non-project actions changed history'
     }
+
+    $routingDir = Join-Path $testRoot '.toolbelt\hop\routing'
+    New-Item -ItemType Directory -Path $routingDir | Out-Null
+    $workspace = Join-Path $testRoot 'work'
+    $sandbox = Join-Path $workspace 'Sandbox'
+    $reserved = Join-Path $workspace 'website'
+    New-Item -ItemType Directory -Path (Join-Path $sandbox '.git'), $reserved | Out-Null
+    $workspaceToml = $workspace.Replace('\', '/')
+    $reservedToml = $reserved.Replace('\', '/')
+    $item = Split-Path -Leaf $project
+    $personal = @"
+version = 5
+
+[[sections]]
+root = "$workspaceToml"
+items = ["$item", "Sandbox"]
+
+[[sections]]
+root = "$reservedToml"
+jump_root = true
+"@
+    $utf8 = [Text.UTF8Encoding]::new($false)
+    [IO.File]::WriteAllText((Join-Path $routingDir 'personal.toml'), $personal, $utf8)
+    [IO.File]::WriteAllText((Join-Path $routingDir 'work.toml'), 'version = 5', $utf8)
+    hop Sandbox --no-color
+    if ((Get-Location).Path -ne $sandbox) { throw 'Named jump through Personal routing failed' }
+    hop website --no-color
+    if ((Get-Location).Path -ne $reserved) { throw 'Named jump to a reserved section root failed' }
+    hop --frequent 1 --no-color
+    if ((Get-Location).Path -ne $project) { throw 'Frequent navigation with Personal routing failed' }
     $global:LASTEXITCODE = 0
 } finally {
     Set-Location -LiteralPath $originalLocation.Path

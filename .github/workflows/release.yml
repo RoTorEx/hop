@@ -33,6 +33,10 @@ jobs:
             os: macos-15
             target: aarch64-apple-darwin
             archive: hop-macos-aarch64.tar.gz
+          - name: Windows x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: hop-windows-x86_64.zip
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -53,7 +57,23 @@ jobs:
       - name: Build
         run: cargo build --release --locked --target "${{ matrix.target }}"
 
+      - name: Test Windows PowerShell 5.1 navigation
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/test-windows.ps1 -Binary "target/${{ matrix.target }}/release/hop.exe"
+
+      - name: Test PowerShell 7 navigation
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-windows.ps1 -Binary "target/${{ matrix.target }}/release/hop.exe"
+
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -LiteralPath "target/${{ matrix.target }}/release/hop.exe" -DestinationPath "${{ matrix.archive }}"
+
       - name: Package Unix
+        if: runner.os != 'Windows'
         run: |
           mkdir -p dist
           cp "target/${{ matrix.target }}/release/hop" dist/hop
