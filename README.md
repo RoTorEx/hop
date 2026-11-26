@@ -196,8 +196,8 @@ under the Hop home directory.
 
 Each group is one flat section. Its root labels the group and anchors its
 relative items. Set `jump_root = true` to make the root itself a destination
-through selector `0`. A root can be the only destination in a section and can
-be a directory without `.git`. Items must contain `.git` to appear.
+through selector `0`. Set `items = []` for a root-only destination. A section
+root can be a directory without `.git`. Items must contain `.git` to appear.
 
 `routing/personal.toml`:
 

@@ -62,6 +62,7 @@ items = ["$item", "Sandbox"]
 [[sections]]
 root = "$reservedToml"
 jump_root = true
+items = []
 "@
     $utf8 = [Text.UTF8Encoding]::new($false)
     [IO.File]::WriteAllText((Join-Path $routingDir 'personal.toml'), $personal, $utf8)
